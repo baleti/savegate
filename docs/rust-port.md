@@ -1,0 +1,10 @@
+# Rust port spec (for h2-native)
+Crate `savegate`, same module split: atomic, guard, backup, journal, core, adapters (DWG/RVT adapters call the Rust readers; snapshot = BTreeMap<String,String>).
+Behaviour to match exactly (tests/test_savegate.py is the vector set; port each test):
+* temp name `.NAME[:40].XXXX.sgtmp` in the destination dir; write, fsync, verify read-back, replace; Windows: MoveFileEx(REPLACE_EXISTING|WRITE_THROUGH) with the 12-try backoff (20 ms doubling, cap 500 ms) on ERROR 5/32/33/1224; extended-length paths (\\?\) above 247 chars.
+* new-file publish: hard link then unlink temp (fail with Exists); fallback replace when links unsupported (FAT, some FUSE).
+* lock file `.NAME.savegate-lock` JSON {pid,host,time}, O_EXCL, stale if same host and pid dead, or older than 6 h.
+* backups `<dir>/.savegate/NAME.YYYYmmdd-HHMMSS-mmm-<sha8>`, fallback `$XDG_CACHE_HOME/savegate/<sha1(dir)[:12]>`, keep newest N (default 20), hash-checked `.part` then rename.
+* journal JSONL, fsync per line, deleted on clean close; torn last line ignored.
+* verify: snapshot(src) vs snapshot(out) with manifest {modified,added,deleted}; DWG side effects: HANDSEED header var and owner object of each added/deleted entity; error classes and exit codes as in savegate-contract.md.
+* Failure injection hook points: tmp_written, before_replace, after_replace (an env var SAVEGATE_KILL_AT=step makes the Rust build abort() there, for the kill -9 tests).

@@ -40,7 +40,7 @@ class DwgAdapter:
         out = {}
         ent_handles = set()
         for blk, e in m.entities():
-            out['ent:%x' % e['handle']] = repr(sorted((k, repr(v)) for k, v in e.items())) + '|' + blk
+            out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, repr(v)) for k, v in e.items())) + '|' + blk).encode(), digest_size=12).digest()
             ent_handles.add(e['handle']); self.owners[e['handle']] = e.get('owner')
         for h, o in m.objs.items():
             if h not in ent_handles:

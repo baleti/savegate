@@ -66,6 +66,10 @@ class DwgAdapter:
     # structural objects/header vars that legitimately change with add/delete/edit
     def side_effects(self, manifest):
         se = set()
+        # owned sub-entities (POLYLINE vertices, SEQEND, INSERT attributes) belong to the declared entity
+        decl = {k for kind in ('modified', 'added', 'deleted') for k in manifest.get(kind, ()) if isinstance(k, int)}
+        for h, o in self.owners.items():
+            if o in decl: se |= {'ent:%x' % h, 'obj:%x' % h}
         for k in list(manifest.get('added', ())) + list(manifest.get('deleted', ())):
             if isinstance(k, int):
                 se.add('hdr:HANDSEED')

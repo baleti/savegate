@@ -83,6 +83,13 @@ class DwgAdapter:
         hs = m.header().get('HANDSEED')
         if isinstance(hs, int) and m.objs and hs <= max(m.objs):
             raise VerifyFailed('HANDSEED %x not above the highest handle %x' % (hs, max(m.objs)))
+        # rule learned from the AutoCAD oracle (AUDIT 'color != owner's'): polyline vertices carry the owner's colour
+        ents = {e['handle']: e for _, e in m.entities()}
+        for h, e in ents.items():
+            if str(e.get('kind', '')).startswith('VERTEX'):
+                o = ents.get(e.get('owner'))
+                if o is not None and o.get('color') != e.get('color'):
+                    raise VerifyFailed('vertex %x colour %r differs from its polyline %x colour %r (AutoCAD AUDIT would repair)' % (h, e.get('color'), e['owner'], o.get('color')))
         return 'ok %s %d objects' % (m.version, len(m.objs))
 
 

@@ -344,3 +344,17 @@ def test_dwg_fuzz_chain_with_tracked_manifest(tmp_path, year):
                     caught += 1
             assert sg.save(doc, out, man).ok
     assert not leftovers(tmp_path)
+
+
+@pytest.mark.skipif(not os.path.exists(RTE), reason='write-lab scene absent (local only)')
+def test_rvt_element_level_identity(tmp_path):
+    pytest.importorskip('numpy'); pytest.importorskip('olefile')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    import cfb
+    from savegate.rvt_elements import elements
+    buf = open(RTE, 'rb').read(); p = tmp_path / 'x.rte'; p.write_bytes(buf)
+    ad = RvtAdapter(elements_fn=elements)
+    doc = sg.open_doc(str(p), ad, cfg())
+    cfb.write(cfb.CFB(buf), str(tmp_path / 's.bin'))
+    r = sg.save(doc, open(tmp_path / 's.bin', 'rb').read(), {})
+    assert r.report['objects_src'] > 1000          # element ids were compared, not just streams

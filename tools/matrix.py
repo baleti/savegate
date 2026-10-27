@@ -55,6 +55,32 @@ def run(out, years, audit):
                     man['modified'] = [h]
                 sg.save(doc, d.save(), man)
         emit(cyc, v, 'cycles100')
+        # 3 fuzz chain endpoint (5 seeds, 8 chained saves each, tracked manifests), 5 unicode / long path name
+        for seed in range(5):
+            fz = os.path.join(out, 'fuzz%d_%s.dwg' % (seed, v)); open(fz, 'wb').write(open(base, 'rb').read())
+            rng = random.Random(seed * 100 + int(v))
+            with sg.open_doc(fz, None, cfg) as doc:
+                for i in range(8):
+                    d = dwgdoc.Doc(doc.buf); es = list(d.entities('*Model_Space')); man = {'modified': [], 'added': [], 'deleted': []}
+                    for _ in range(rng.randint(1, 3)):
+                        op = rng.choice(['move', 'props', 'copy', 'erase', 'line', 'circle', 'text'])
+                        if op == 'line': man['added'].append(d.add_line((0, 0), (rng.random() * 9, 3)))
+                        elif op == 'circle': man['added'].append(d.add_circle((1, 1), 1 + rng.random()))
+                        elif op == 'text': man['added'].append(d.add_text((0, 0), 'fz%d' % rng.randint(0, 99), 2.5))
+                        else:
+                            h = rng.choice(es)
+                            if h in man['deleted'] or h in man['added'] or h in man['modified']: continue
+                            try:
+                                if op == 'move': d.transform(h, X.Transform.translate(rng.random(), 1)); man['modified'].append(h)
+                                elif op == 'props': d.set_props(h, color=rng.randint(1, 200)); man['modified'].append(h)
+                                elif op == 'copy': man['added'].append(d.copy_entity(h, X.Transform.translate(5, 5)))
+                                elif op == 'erase': d.erase(h); es.remove(h); man['deleted'].append(h)
+                            except (NotImplementedError, KeyError): d = dwgdoc.Doc(doc.buf); man = {'modified': [], 'added': [], 'deleted': []}
+                    sg.save(doc, d.save(), man)
+            emit(fz, v, 'fuzz%d' % seed)
+        with sg.open_doc(base, None, cfg) as doc:
+            ud = os.path.join(out, 'Gebäude Süd 設計 ' + 'x' * 60); os.makedirs(ud, exist_ok=True)
+            p = os.path.join(ud, 'Grundriß 平面図 (v2)_%s.dwg' % v); sg.save_as(doc, doc.buf, p, {}, overwrite=True); emit(p, v, 'unicode_path')
     with open(os.path.join(out, 'ledger.tsv'), 'w') as f:
         f.write('sha8\tversion\trow\tvm_result\tdate\n')
         for r in rows: f.write('\t'.join(r) + '\n')

@@ -358,3 +358,15 @@ def test_rvt_element_level_identity(tmp_path):
     cfb.write(cfb.CFB(buf), str(tmp_path / 's.bin'))
     r = sg.save(doc, open(tmp_path / 's.bin', 'rb').read(), {})
     assert r.report['objects_src'] > 1000          # element ids were compared, not just streams
+
+
+@pytest.mark.skipif(not HAVE_DWG, reason='dwg-write templates absent')
+def test_dwg_copy_of_polyline_children_belong_to_declared_entity(tmp_path):
+    sys.path.insert(0, DWGLIB)
+    import dwgdoc, dwgxform as X
+    d = dwgdoc.Doc(open(DWGLIB + '/templates/blank_2018.dwg', 'rb').read()); pl = d.add_polyline2d([(0, 0), (5, 5), (9, 0)]); buf = d.save()
+    p = tmp_path / 'x.dwg'; p.write_bytes(buf); doc = sg.open_doc(str(p), None, cfg())
+    d = dwgdoc.Doc(buf); new = d.copy_entity(pl, X.Transform.translate(5, 5))
+    assert sg.save(doc, d.save(), {'added': [new]}).ok
+    d = dwgdoc.Doc(doc.buf); d.erase(pl)
+    assert sg.save(doc, d.save(), {'deleted': [pl]}).ok

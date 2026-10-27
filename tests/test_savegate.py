@@ -304,3 +304,43 @@ def test_rvt_container_verify(tmp_path):
     with pytest.raises(sg.VerifyFailed): sg.save(doc, mod, {})        # undeclared stream change
     assert sg.save(doc, mod, {'modified': ['stream:Global/Latest']}).ok
     with pytest.raises(Exception): sg.save(doc, b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' + b'\0' * 600, {})
+
+
+@pytest.mark.skipif(not HAVE_DWG, reason='dwg-write templates absent')
+@pytest.mark.parametrize('year', ['2000', '2004', '2010', '2013', '2018'])
+def test_dwg_fuzz_chain_with_tracked_manifest(tmp_path, year):
+    """random edit chains; the test tracks the exact handles it touched, savegate must accept every step
+    (no false alarms) and a lie in the manifest must be caught"""
+    import random
+    sys.path.insert(0, DWGLIB)
+    import dwgdoc, dwgxform as X
+    rng = random.Random(int(year))
+    buf = open('%s/templates/blank_%s.dwg' % (DWGLIB, year), 'rb').read()
+    d = dwgdoc.Doc(buf)
+    for i in range(20): d.add_line((i, 0), (i, 10))
+    buf = d.save()
+    p = tmp_path / 'f.dwg'; p.write_bytes(buf)
+    caught = 0
+    with sg.open_doc(str(p), None, cfg(backup_keep=3)) as doc:
+        for step in range(12):
+            d = dwgdoc.Doc(doc.buf); ls = list(d.entities('*Model_Space')); man = {'modified': [], 'added': [], 'deleted': []}
+            for _ in range(rng.randint(1, 4)):
+                op = rng.choice(['move', 'props', 'copy', 'erase', 'line', 'circle'])
+                if op == 'line': man['added'].append(d.add_line((0, 0), (rng.random() * 9, 3)))
+                elif op == 'circle': man['added'].append(d.add_circle((1, 1), 1 + rng.random()))
+                elif len(ls) < 3: continue
+                else:
+                    h = rng.choice(ls)
+                    if h in man['deleted'] or h in man['added']: continue
+                    if op == 'move': d.transform(h, X.Transform.translate(rng.random(), 1)); man['modified'].append(h)
+                    elif op == 'props': d.set_props(h, color=rng.randint(1, 200)); man['modified'].append(h)
+                    elif op == 'copy': man['added'].append(d.copy_entity(h, X.Transform.translate(5, 5)))
+                    elif op == 'erase': d.erase(h); ls.remove(h); man['deleted'].append(h)
+            out = d.save()
+            if man['modified'] and rng.random() < .3:
+                bad = dict(man, modified=man['modified'][1:])       # forget one declared edit
+                if len(set(man['modified'])) == len(man['modified']):
+                    with pytest.raises(sg.VerifyFailed): sg.save(doc, out, bad)
+                    caught += 1
+            assert sg.save(doc, out, man).ok
+    assert not leftovers(tmp_path)

@@ -1,0 +1,7 @@
+[project]
+name = "savegate"
+version = "0.1.0"
+description = "Crash-safe, verified save/overwrite/restore for CAD files"
+requires-python = ">=3.9"
+[tool.setuptools]
+packages = ["savegate"]

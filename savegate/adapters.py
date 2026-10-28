@@ -34,9 +34,7 @@ class DwgAdapter:
             raise UnsupportedVersion('DWG %s cannot be saved (writable: %s)' % (v, ', '.join(DWG_WRITABLE)))
         return v
 
-    def snapshot(self, buf):
-        import dwgmodel
-        m = dwgmodel.Model(buf)
+    def _snap(self, m, same):
         out = {}
         ent_handles = set()
         for blk, e in m.entities():
@@ -49,6 +47,32 @@ class DwgAdapter:
             out['hdr:%s' % k] = repr(v)
         out['meta:version'] = m.version
         return out
+
+    def snapshot_pair(self, src, out):
+        """Fast path for verify: objects whose raw bytes are identical in source and output cannot differ when decoded
+        (any cross-object change shows in the raw bytes of the object that changed), so only the others are decoded."""
+        import dwgmodel as M
+        ms, mo = M.Model(src), M.Model(out)
+        same = {h for h, o in ms.objs.items() if h in mo.objs and mo.objs[h].raw == o.raw and mo.objs[h].type == o.type}
+        saved = (dict(M.ENT_DECODERS), dict(M.CLASS_DECODERS), M._proxy_entity)
+        def guard(f):
+            def g(o, *a, **k):
+                if o.handle in same: raise _Skip()
+                return f(o, *a, **k)
+            return g
+        class _Skip(Exception): pass
+        try:
+            for d in (M.ENT_DECODERS, M.CLASS_DECODERS):
+                for k in list(d): d[k] = guard(d[k])
+            M._proxy_entity = guard(saved[2])
+            snaps = [self._snap(m, same) for m in (ms, mo)]
+        finally:
+            M.ENT_DECODERS.clear(); M.ENT_DECODERS.update(saved[0]); M.CLASS_DECODERS.clear(); M.CLASS_DECODERS.update(saved[1]); M._proxy_entity = saved[2]
+        return snaps
+
+    def snapshot(self, buf):
+        import dwgmodel
+        return self._snap(dwgmodel.Model(buf), set())
 
     def expand(self, manifest):
         """handles (ints) in the manifest mean entity + object keys; structural side effects of add/delete

@@ -60,7 +60,7 @@ def open_doc(path, adapter=None, cfg=None, journal=True):
 
 def _verify(doc, new_bytes, manifest):
     ad = doc.adapter
-    a = ad.snapshot(doc.buf); b = ad.snapshot(new_bytes)
+    a, b = ad.snapshot_pair(doc.buf, new_bytes) if hasattr(ad, 'snapshot_pair') else (ad.snapshot(doc.buf), ad.snapshot(new_bytes))
     mod, add, dele = ad.expand(manifest) if hasattr(ad, 'expand') else (set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ())))
     se = ad.side_effects(manifest) if hasattr(ad, 'side_effects') else set()
     mod = mod | se; add = add | se; dele = dele | se

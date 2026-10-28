@@ -32,14 +32,24 @@ def _lock_path(path):
 
 def _pid_alive(pid):
     if pid <= 0: return False
+    if os.name == 'nt':      # os.kill(pid, 0) is not a probe on Windows (generic OSError / console control event): ask the OS
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL('kernel32', use_last_error=True)
+        k.OpenProcess.restype = wintypes.HANDLE
+        h = k.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h: return ctypes.get_last_error() == 5      # access denied = exists
+        try:
+            code = wintypes.DWORD()
+            k.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            return bool(k.GetExitCodeProcess(h, ctypes.byref(code))) and code.value == 259     # STILL_ACTIVE
+        finally: k.CloseHandle(h)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    except OSError:
-        return os.name == 'nt'   # on Windows kill(pid,0) may raise generic errors; assume alive
     return True
 
 

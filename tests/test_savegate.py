@@ -105,7 +105,7 @@ def test_journal_recovery(tmp_path):
 
 
 def test_dir_not_writable(tmp_path):
-    if os.geteuid() == 0: pytest.skip('root')
+    if sys.platform == 'win32' or os.geteuid() == 0: pytest.skip('root / chmod semantics differ on Windows')
     d = tmp_path / 'ro'; d.mkdir(); p = mk(d)
     doc = sg.open_doc(p, RawAdapter(), cfg())
     os.chmod(d, 0o555)
@@ -122,6 +122,7 @@ def test_unicode_and_long_paths(tmp_path):
         sg.save(doc, b'ok', {'modified': ['file']})
     assert open(p, 'rb').read() == b'ok'
     long = 'n' * 200 + '.bin'
+    if sys.platform == 'win32' and len(str(tmp_path / long)) > 255: pytest.skip('test helper has no \\\\?\\ prefix')
     q = mk(tmp_path, name=long)
     with sg.open_doc(q, RawAdapter(), cfg()) as doc:
         sg.save(doc, b'ok', {'modified': ['file']})
@@ -155,7 +156,7 @@ from savegate import atomic
 from savegate.adapters import RawAdapter
 step = sys.argv[2]
 def hook(s):
-    if s == step: os.kill(os.getpid(), signal.SIGKILL)
+    if s == step: os.kill(os.getpid(), signal.SIGKILL) if hasattr(signal, 'SIGKILL') else os._exit(137)
 atomic._hook = hook
 doc = sg.open_doc(sys.argv[1], RawAdapter(), sg.Config(allow_overwrite=True, require_gate=False))
 sg.save(doc, b'N' * 100000, {{'modified': ['file']}})
@@ -168,7 +169,7 @@ def test_kill9_at_every_step(tmp_path, step):
     script = tmp_path / 'k.py'
     script.write_text(KILL_SCRIPT.format(root=os.path.join(os.path.dirname(__file__), '..')))
     r = subprocess.run([sys.executable, str(script), p, step], env=dict(os.environ))
-    assert r.returncode == -signal.SIGKILL
+    assert r.returncode in (-getattr(signal, 'SIGKILL', 9), 137)
     data = open(p, 'rb').read()
     assert data in (b'O' * 5000, b'N' * 100000)
     assert data == b'O' * 5000 or step == 'after_replace'

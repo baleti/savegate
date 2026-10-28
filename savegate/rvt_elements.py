@@ -4,7 +4,7 @@ save verification for RVT on a worker host; for the small writer scenes it takes
 import os, sys, tempfile, hashlib, json
 
 
-def elements(buf, reader_dir=None, with_geometry=True):
+def elements(buf, reader_dir=None, with_geometry=True, with_params=True):
     reader_dir = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
     if reader_dir not in sys.path: sys.path.insert(0, reader_dir)
     import rvt_geometry as G
@@ -23,6 +23,11 @@ def elements(buf, reader_dir=None, with_geometry=True):
                 except Exception as e:
                     v += '|ERR ' + type(e).__name__
             out[eid] = v
+        if with_params:     # parameter values (stored + derived) per element: a parameter-only edit must show up too
+            import rvt_params
+            pr = rvt_params.params(p)
+            for eid, d in pr.items():
+                if eid in out: out[eid] += '|P' + hashlib.sha1(json.dumps(d, default=repr, sort_keys=True).encode()).hexdigest()
         return out
     finally:
         os.remove(p)

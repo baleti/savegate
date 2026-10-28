@@ -371,3 +371,22 @@ def test_dwg_copy_of_polyline_children_belong_to_declared_entity(tmp_path):
     assert sg.save(doc, d.save(), {'added': [new]}).ok
     d = dwgdoc.Doc(doc.buf); d.erase(pl)
     assert sg.save(doc, d.save(), {'deleted': [pl]}).ok
+
+
+def test_rvt_declared_element_edit_tolerates_holding_streams(tmp_path):
+    """stub element view: element 7 is 'stored' in a Partitions stream; editing that stream is accepted only with element 7 declared"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    import cfb
+    buf = open(RTE, 'rb').read(); p = tmp_path / 'x.rte'; p.write_bytes(buf)
+    c = cfb.CFB(buf)
+    pk = next((k for k in c.streams() if k.startswith('Partitions/')), None)
+    if pk is None: pytest.skip('no Partitions stream in the sample')
+    def view(b):
+        s = cfb.CFB(b).streams()[pk].data
+        return {7: hashlib.sha1(s).hexdigest(), 8: 'const'}
+    doc = sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg())
+    e = c.streams()[pk]; e.data = e.data[:-1] + bytes([e.data[-1] ^ 1])
+    cfb.write(c, str(tmp_path / 'm.bin')); mod = open(tmp_path / 'm.bin', 'rb').read()
+    with pytest.raises(sg.VerifyFailed): sg.save(doc, mod, {})                             # nothing declared
+    with pytest.raises(sg.VerifyFailed): sg.save(doc, mod, {'modified': ['el:8']})         # wrong element declared
+    assert sg.save(doc, mod, {'modified': ['el:7']}).ok

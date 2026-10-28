@@ -6,19 +6,19 @@ import savegate as sg
 from savegate.adapters import RvtAdapter
 from savegate import rvt_elements as E
 WL = os.path.expanduser('~/rvt-research/write-lab')
-out, a, b, eid, row = sys.argv[1:6]
+out, a, b, eid, row = sys.argv[1:6]; year = os.path.basename(a)[:4] if os.path.basename(a)[:2] == '20' else '2024'
 os.makedirs(out, exist_ok=True); os.environ['SAVEGATE_JOURNAL'] = out + '/journal'
 cfg = sg.Config(allow_overwrite=True, require_gate=False)
 src = os.path.join(out, 'src.rte'); open(src, 'wb').write(open(a, 'rb').read())
 with sg.open_doc(src, RvtAdapter(elements_fn=E.elements), cfg) as doc:
-    p = os.path.join(out, '2024_writer_sg%s.rte' % row)
+    p = os.path.join(out, '%s_writer_sg%s.rte' % (year, row))
     r = sg.save_as(doc, open(b, 'rb').read(), p, {'modified': ['el:' + eid]}, overwrite=True)
 sha = hashlib.sha256(open(p, 'rb').read()).hexdigest()[:8]; res = 'not_run'
 if '--open' in sys.argv:
     for att in range(3):
         time.sleep(20)
-        o = subprocess.run(['python3', WL + '/tools/open_test.py', '2024', p, 'sg%s%s%d' % (row, sha, att)], capture_output=True, text=True, cwd=WL, timeout=1800)
+        o = subprocess.run(['python3', WL + '/tools/open_test.py', year, p, 'sg%s%s%d' % (row, sha, att)], capture_output=True, text=True, cwd=WL, timeout=1800)
         res = 'OPEN_OK' if 'ok=True' in o.stdout else 'FAIL ' + (o.stdout.strip().splitlines() or ['NO_OUTPUT'])[-1]
         if res == 'OPEN_OK': break
     if att: res += ' (attempt %d)' % (att + 1)
-print(sha, 'RVT2024', row, res, time.strftime('%Y-%m-%d'), sep='\t')
+print(sha, 'RVT' + year, row, res, time.strftime('%Y-%m-%d'), sep='\t')

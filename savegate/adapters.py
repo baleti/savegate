@@ -145,12 +145,17 @@ class RvtAdapter:
         out['meta:sector'] = '%d' % c.major
         if self.elements_fn:
             out.update({'el:' + str(k): v for k, v in self.elements_fn(buf).items()})
+        self._keys = set(out)
         return out
 
     def expand(self, manifest):
         return set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ()))
 
-    def side_effects(self, manifest): return set()
+    def side_effects(self, manifest):
+        """With an element-level view, an element edit rewrites the partition / global streams that hold it; those stream keys
+        are tolerated only when something is declared and the element keys (strict) cover the content. Identity stays byte-strict."""
+        if not self.elements_fn or not any(manifest.get(k) for k in ('modified', 'added', 'deleted')): return set()
+        return {k for k in getattr(self, '_keys', ()) if k.startswith(('stream:Partitions/', 'stream:Global/'))}
 
     def validate(self, buf):
         import cfb

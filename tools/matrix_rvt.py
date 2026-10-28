@@ -18,10 +18,15 @@ def main():
     def emit(path, year, row):
         sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()[:8]; res = 'not_run'
         if opn:
-            tmp = os.path.join(out, 'open_%s_%s.rte' % (row, sha)); open(tmp, 'wb').write(open(path, 'rb').read())   # ASCII name for the guest transfer
-            r = subprocess.run(['python3', WL + '/tools/open_test.py', year, tmp, 'sg_%s_%s' % (row[:3], sha)], capture_output=True, text=True, cwd=WL, timeout=1800)
-            res = (r.stdout.strip().splitlines() or ['NO_OUTPUT ' + r.stderr[-200:]])[-1]
-            res = 'OPEN_OK' if 'ok=True' in res else 'FAIL ' + res
+            tmp = os.path.join(out, '%s_writer_sg%s%s.rte' % (year, row.replace('_', ''), sha))   # the write-lab guest job needs a '<year>_writer_*' style name (other names failed with the add-in port refused)
+            open(tmp, 'wb').write(open(path, 'rb').read())
+            for attempt in range(3):
+                time.sleep(20)      # let the previous Revit instance and its add-in port settle (back-to-back fresh starts refused the port)     # the guest add-in port sometimes refuses right after a fresh Revit start: harness flake, retry (same bytes)
+                r = subprocess.run(['python3', WL + '/tools/open_test.py', year, tmp, 'sg%s%s%d' % (row[:3], sha, attempt)], capture_output=True, text=True, cwd=WL, timeout=1800)
+                res = (r.stdout.strip().splitlines() or ['NO_OUTPUT ' + r.stderr[-200:]])[-1]
+                res = 'OPEN_OK' if 'ok=True' in res else 'FAIL ' + res
+                if res == 'OPEN_OK': break
+            if attempt: res += ' (attempt %d)' % (attempt + 1)
         rows.append((sha, 'RVT', year, row, res, time.strftime('%Y-%m-%d')))
         print(*rows[-1], sep='\t'); sys.stdout.flush()
     for sc in scenes:

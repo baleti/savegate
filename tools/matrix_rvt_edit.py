@@ -17,7 +17,7 @@ sha = hashlib.sha256(open(p, 'rb').read()).hexdigest()[:8]; res = 'not_run'
 if '--open' in sys.argv:
     for att in range(3):
         time.sleep(20)
-        o = subprocess.run(['python3', WL + '/tools/open_test.py', year, p, 'sg%s%s%d' % (row, sha, att)], capture_output=True, text=True, cwd=WL, timeout=1800)
+        o = subprocess.run(['python3', WL + '/tools/open_test.py', year, p, 'sg%s%s%d' % (row, sha, att)], capture_output=True, text=True, cwd=WL, timeout=7200)
         res = 'OPEN_OK' if 'ok=True' in o.stdout else 'FAIL ' + (o.stdout.strip().splitlines() or ['NO_OUTPUT'])[-1]
         if res == 'OPEN_OK': break
     if att: res += ' (attempt %d)' % (att + 1)

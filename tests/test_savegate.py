@@ -292,7 +292,7 @@ RTE = os.path.expanduser('~/rvt-research/write-lab/scenes/classtests/2024_writer
 @pytest.mark.skipif(not os.path.exists(RTE), reason='write-lab scene absent (local only)')
 def test_rvt_container_verify(tmp_path):
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
-    import cfb
+    cfb = pytest.importorskip('cfb')
     buf = open(RTE, 'rb').read()
     p = tmp_path / 'x.rte'; p.write_bytes(buf)
     doc = sg.open_doc(str(p), None, cfg())
@@ -351,7 +351,7 @@ def test_dwg_fuzz_chain_with_tracked_manifest(tmp_path, year):
 def test_rvt_element_level_identity(tmp_path):
     pytest.importorskip('numpy'); pytest.importorskip('olefile')
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
-    import cfb
+    cfb = pytest.importorskip('cfb')
     from savegate.rvt_elements import elements
     buf = open(RTE, 'rb').read(); p = tmp_path / 'x.rte'; p.write_bytes(buf)
     ad = RvtAdapter(elements_fn=elements)
@@ -373,10 +373,11 @@ def test_dwg_copy_of_polyline_children_belong_to_declared_entity(tmp_path):
     assert sg.save(doc, d.save(), {'deleted': [pl]}).ok
 
 
+@pytest.mark.skipif(not os.path.exists(RTE), reason='write-lab scene absent (local only)')
 def test_rvt_declared_element_edit_tolerates_holding_streams(tmp_path):
     """stub element view: element 7 is 'stored' in a Partitions stream; editing that stream is accepted only with element 7 declared"""
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
-    import cfb
+    cfb = pytest.importorskip('cfb')
     buf = open(RTE, 'rb').read(); p = tmp_path / 'x.rte'; p.write_bytes(buf)
     c = cfb.CFB(buf)
     pk = next((k for k in c.streams() if k.startswith('Partitions/')), None)

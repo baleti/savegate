@@ -483,3 +483,14 @@ def test_kill_at_every_os_call_during_save(tmp_path):
             assert sg.save(doc, b'AFTER', {'modified': ['file']}).ok
         assert p.read_bytes() == b'AFTER'
     assert seen == {True, False}        # both outcomes occur across the sweep (before and after the rename)
+
+
+def test_full_fsync_darwin_uses_fullfsync(monkeypatch, tmp_path):
+    calls = []
+    import types
+    fake = types.SimpleNamespace(F_FULLFSYNC=51, fcntl=lambda fd, op, *a: calls.append(op))
+    monkeypatch.setattr(atomic.sys, 'platform', 'darwin'); monkeypatch.setitem(sys.modules, 'fcntl', fake)
+    with open(tmp_path / 'f', 'wb') as f: atomic.full_fsync(f.fileno())
+    assert calls == [51]
+    fake.fcntl = lambda fd, op, *a: (_ for _ in ()).throw(OSError('unsupported'))      # drive without F_FULLFSYNC: falls back to fsync
+    with open(tmp_path / 'g', 'wb') as f: atomic.full_fsync(f.fileno())

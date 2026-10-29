@@ -1,7 +1,7 @@
 """Fingerprint (concurrent-modification guard) and advisory lock file."""
 import os, time, json, socket
 from collections import namedtuple
-from .atomic import sha256_file, long_path
+from .atomic import sha256_file, long_path, full_fsync
 from .errors import Locked, Conflict, DiskError
 
 Fingerprint = namedtuple('Fingerprint', 'size mtime_ns sha256')
@@ -75,7 +75,7 @@ class Lock:
             try:
                 with os.fdopen(fd, 'w') as f:
                     json.dump({'pid': os.getpid(), 'host': socket.gethostname(), 'time': time.time()}, f)
-                    f.flush(); os.fsync(f.fileno())
+                    f.flush(); full_fsync(f.fileno())
             except OSError as e:
                 self.release(); raise DiskError('cannot write lock file %s: %s' % (self.lp, e)) from e
             return self

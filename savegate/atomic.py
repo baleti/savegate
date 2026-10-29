@@ -42,13 +42,24 @@ def replace_retry(src, dst, tries=12, delay=0.02, max_delay=0.5, _sleep=time.sle
             _sleep(d); d = min(d * 2, max_delay)
 
 
+def full_fsync(fd):
+    """os.fsync, but on macOS F_FULLFSYNC (fsync alone does not flush the drive cache there); falls back to os.fsync"""
+    if sys.platform == 'darwin':
+        try:
+            import fcntl
+            fcntl.fcntl(fd, fcntl.F_FULLFSYNC); return
+        except (ImportError, OSError, AttributeError):
+            pass
+    os.fsync(fd)
+
+
 def fsync_dir(path):
     if _WIN:
         return
     try:
         fd = os.open(path or '.', os.O_RDONLY)
         try:
-            os.fsync(fd)
+            full_fsync(fd)
         finally:
             os.close(fd)
     except OSError:
@@ -64,7 +75,7 @@ def write_temp(dest, data):
             mv = memoryview(data)
             for i in range(0, len(mv), 1 << 24):
                 f.write(mv[i:i + (1 << 24)])
-            f.flush(); os.fsync(f.fileno())
+            f.flush(); full_fsync(f.fileno())
         _step('tmp_written')
     except BaseException:
         try: os.remove(tmp)

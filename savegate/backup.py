@@ -1,6 +1,6 @@
 """Versioned backups next to the file (<dir>/.savegate/), falling back to the user cache dir."""
 import os, shutil, time, hashlib
-from .atomic import long_path, sha256_file, fsync_dir, write_temp, commit_temp
+from .atomic import long_path, sha256_file, fsync_dir, full_fsync, write_temp, commit_temp
 from .errors import DiskError, SaveError
 
 
@@ -43,7 +43,7 @@ def make_backup(path, keep=20):
             os.makedirs(long_path(bd), exist_ok=True)
             dst = os.path.join(bd, name); part = dst + '.part'
             with open(long_path(path), 'rb') as a, open(long_path(part), 'wb') as b:
-                shutil.copyfileobj(a, b, 1 << 22); b.flush(); os.fsync(b.fileno())
+                shutil.copyfileobj(a, b, 1 << 22); b.flush(); full_fsync(b.fileno())
             if sha256_file(part) != src_hash:
                 os.remove(long_path(part)); raise OSError('backup hash mismatch')
             os.replace(long_path(part), long_path(dst)); fsync_dir(bd)

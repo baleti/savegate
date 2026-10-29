@@ -1,5 +1,6 @@
 """Edit journal: JSON lines, fsynced per entry, so a viewer crash can be recovered."""
 import os, json, time, uuid
+from .atomic import full_fsync
 
 
 def journal_dir():
@@ -20,7 +21,7 @@ class Journal:
     def log(self, kind, **kw):
         try:   # a full disk or unwritable state dir must never break a save
             self.f.write(json.dumps(dict(t=time.time(), kind=kind, **kw), ensure_ascii=False) + '\n')
-            self.f.flush(); os.fsync(self.f.fileno())
+            self.f.flush(); full_fsync(self.f.fileno())
         except (OSError, ValueError):
             pass
 

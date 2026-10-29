@@ -10,3 +10,4 @@ class OverwriteDisabled(SaveError): pass
 class Locked(SaveError): pass
 class DiskError(SaveError): pass
 class Exists(SaveError): pass
+class ReadOnlyTarget(SaveError): pass     # target carries a read-only flag/mode; refused up front unless Config.allow_readonly

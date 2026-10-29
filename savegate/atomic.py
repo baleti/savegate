@@ -73,13 +73,25 @@ def write_temp(dest, data):
     return tmp
 
 
-def commit_temp(tmp, dest, copy_mode_from=None):
+def is_readonly(path):
+    st = os.stat(long_path(path))
+    if _WIN: return bool(getattr(st, 'st_file_attributes', 0) & 1)      # FILE_ATTRIBUTE_READONLY
+    return stat.S_IMODE(st.st_mode) & 0o222 == 0
+
+
+def commit_temp(tmp, dest, copy_mode_from=None, keep_readonly=False):
     """rename tmp over dest (atomic), then fsync the directory"""
     if copy_mode_from and os.path.exists(long_path(copy_mode_from)):
-        try: os.chmod(tmp, stat.S_IMODE(os.stat(long_path(copy_mode_from)).st_mode) | stat.S_IWRITE)
+        mode = stat.S_IMODE(os.stat(long_path(copy_mode_from)).st_mode)
+        try: os.chmod(tmp, mode if keep_readonly else mode | stat.S_IWRITE)
         except OSError: pass
+    ro = keep_readonly and os.path.exists(long_path(dest)) and is_readonly(dest)
+    if ro and _WIN:
+        os.chmod(long_path(dest), stat.S_IWRITE)      # Windows cannot replace a READONLY file
     _step('before_replace')
     replace_retry(tmp, dest)
+    if ro and _WIN:
+        os.chmod(long_path(dest), stat.S_IREAD)
     _step('after_replace')
     fsync_dir(os.path.dirname(os.path.abspath(dest)))
 

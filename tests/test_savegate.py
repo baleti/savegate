@@ -1,4 +1,4 @@
-import os, sys, time, hashlib, subprocess, signal, shutil, errno, pytest
+import os, stat, sys, time, hashlib, subprocess, signal, shutil, errno, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import savegate as sg
 from savegate import atomic
@@ -405,3 +405,29 @@ def test_gate_open_requires_complete_ledger(tmp_path, monkeypatch):
     assert evidence.missing(str(led), 'dwg', 'AC1032')                                 # a FAIL row does not count
     led.write_text('\n'.join(rows + ['sha\tAC1032\t%s\tAUDIT_OK\t2026' % evidence.DWG_ROWS[-1]]) + '\n')
     assert main(['gate', 'open', 'dwg', 'AC1032', '--evidence', str(led)]) == 0
+
+
+def test_readonly_target_refused_fast(tmp_path):
+    p = mk(tmp_path)
+    data = open(p, 'rb').read()
+    os.chmod(p, 0o444)
+    before = sorted(os.listdir(tmp_path))
+    t0 = time.time()
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc:
+        with pytest.raises(sg.ReadOnlyTarget):
+            sg.save(doc, b'NEW' * 10, {'modified': ['file']})
+        with pytest.raises(sg.ReadOnlyTarget):             # Save As over another read-only file as well
+            q = mk(tmp_path, name='b.bin'); os.chmod(q, 0o444)
+            sg.save_as(doc, b'NEW', q, {'modified': ['file']}, overwrite=True)
+    assert time.time() - t0 < 2.0, 'must not spend the sharing-violation backoff on a read-only flag'
+    assert open(p, 'rb').read() == data
+    assert stat.S_IMODE(os.stat(p).st_mode) & 0o222 == 0
+    assert [x for x in sorted(os.listdir(tmp_path)) if x not in ('b.bin', 'journal')] == before, 'temp, lock or journal files left behind'
+
+
+def test_readonly_target_allowed_keeps_mode(tmp_path):
+    p = mk(tmp_path); os.chmod(p, 0o444)
+    with sg.open_doc(p, RawAdapter(), cfg(allow_readonly=True)) as doc:
+        assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
+    assert open(p, 'rb').read() == b'NEW'
+    assert stat.S_IMODE(os.stat(p).st_mode) & 0o222 == 0        # the protection flag survives

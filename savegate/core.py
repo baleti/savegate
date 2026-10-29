@@ -18,6 +18,7 @@ class Config:
     gate_file: str = None             # default: <cache>/gate.json or $SAVEGATE_GATE
     journal_dir: str = None
     verify: bool = True
+    allow_readonly: bool = False      # overwrite a read-only target (the flag/mode is kept)
 
 
 @dataclass
@@ -114,9 +115,15 @@ def save_as(doc, new_bytes, dest, manifest=None, overwrite=False, verify=None):
         raise DiskError('save failed, nothing was written: %s' % e) from e
 
 
+def _check_writable_target(path, cfg):
+    if not cfg.allow_readonly and os.path.exists(long_path(path)) and atomic.is_readonly(path):
+        raise ReadOnlyTarget('%s is read-only: clear the flag, choose Save As, or set allow_readonly' % path)
+
+
 def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
     t0 = time.time(); verify = doc.cfg.verify if verify is None else verify
     dest = os.path.abspath(dest)
+    if overwrite and os.path.abspath(dest) != doc.path: _check_writable_target(dest, doc.cfg)
     if not overwrite and os.path.exists(long_path(dest)): raise Exists('%s exists' % dest)
     if overwrite and os.path.abspath(dest) == doc.path:
         return _save(doc, new_bytes, manifest, False, verify)
@@ -156,6 +163,7 @@ def _save(doc, new_bytes, manifest, force, verify):
     fmt = doc.adapter.name
     if cfg.require_gate and not gate_open(fmt, doc.version, cfg):
         raise GateClosed('overwrite of %s %s is not enabled: the oracle test matrix is not green' % (fmt, doc.version))
+    _check_writable_target(doc.path, cfg)
     with Lock(doc.path):
         if not force: check_unchanged(doc.path, doc.fingerprint)
         if doc.journal: doc.journal.log('save_begin', size=len(new_bytes))
@@ -164,7 +172,7 @@ def _save(doc, new_bytes, manifest, force, verify):
             if not force: check_unchanged(doc.path, doc.fingerprint, rehash=True)   # last check right before rename
             backup = make_backup(doc.path, cfg.backup_keep)
             if doc.journal: doc.journal.log('commit', backup=backup)
-            atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path)
+            atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly)
         except BaseException:
             try: os.remove(long_path(tmp))
             except OSError: pass

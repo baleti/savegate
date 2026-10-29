@@ -432,3 +432,54 @@ def test_readonly_target_allowed_keeps_mode(tmp_path):
         assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
     assert open(p, 'rb').read() == b'NEW'
     assert stat.S_IMODE(os.stat(p).st_mode) & 0o222 == 0        # the protection flag survives
+
+
+_CHILD = r'''
+import os, sys
+sys.path.insert(0, %(root)r)
+import savegate as sg
+from savegate.adapters import RawAdapter
+n = int(sys.argv[2]); count = [0]
+def wrap(mod, name):
+    f = getattr(mod, name)
+    def g(*a, **k):
+        count[0] += 1
+        if n and count[0] == n: os._exit(137)
+        return f(*a, **k)
+    setattr(mod, name, g)
+for nm in ('replace', 'rename', 'fsync', 'write', 'open', 'link', 'remove', 'unlink', 'chmod', 'close', 'mkdir', 'makedirs', 'utime'):
+    if hasattr(os, nm): wrap(os, nm)
+import shutil
+for nm in ('copy2', 'copyfile', 'copy'): wrap(shutil, nm)
+os.environ['SAVEGATE_JOURNAL'] = sys.argv[3]
+cfg = sg.Config(allow_overwrite=True, require_gate=False, backup_keep=2)
+doc = sg.open_doc(sys.argv[1], RawAdapter(), cfg)
+count[0] = 0
+sg.save(doc, b'NEWCONTENT' * 1000, {'modified': ['file']})
+print('CALLS', count[0])
+'''
+
+
+def test_kill_at_every_os_call_during_save(tmp_path):
+    """kill -9 equivalent (os._exit) before the Nth filesystem call of one save, for every N: the destination is always the old or the new
+    bytes (never partial, never missing), and the next save always succeeds"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    child = tmp_path / 'child.py'; child.write_text(_CHILD % {'root': root})
+    old = b'ORIGINAL' * 500; new = b'NEWCONTENT' * 1000
+    def run(n, d):
+        p = d / 'a.bin'; p.write_bytes(old)
+        return subprocess.run([sys.executable, str(child), str(p), str(n), str(d / 'j')], capture_output=True, text=True), p
+    r, _ = run(0, tmp_path / 'probe') if (tmp_path / 'probe').mkdir() is None else None
+    total = int(r.stdout.split('CALLS')[1]); assert total > 5, r.stderr
+    seen = set()
+    for n in range(1, total + 1):
+        d = tmp_path / ('k%d' % n); d.mkdir()
+        r, p = run(n, d)
+        assert r.returncode == 137, (n, r.stderr)
+        data = p.read_bytes()
+        assert data in (old, new), 'partial or missing destination after kill at call %d' % n
+        seen.add(data == new)
+        with sg.open_doc(str(p), RawAdapter(), cfg(backup_keep=2)) as doc:       # the next save works (stale lock of a dead pid)
+            assert sg.save(doc, b'AFTER', {'modified': ['file']}).ok
+        assert p.read_bytes() == b'AFTER'
+    assert seen == {True, False}        # both outcomes occur across the sweep (before and after the rename)

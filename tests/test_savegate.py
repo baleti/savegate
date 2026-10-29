@@ -532,3 +532,11 @@ def test_orphan_temp_files_of_crashed_saves_are_cleaned(tmp_path):
     with sg.open_doc(p, RawAdapter(), cfg()) as doc:
         assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
     assert not old.exists() and fresh.exists()      # open_doc sweeps temps older than 1 h (crash leftovers), keeps recent ones
+
+
+@pytest.mark.parametrize('ver', ['AC1006', 'AC1009', 'AC1012', 'AC1014', 'AC1021', 'AC1035', 'AC1099'])
+def test_unsupported_dwg_versions_named_clearly(ver):
+    from savegate.adapters import pick_adapter
+    with pytest.raises(sg.UnsupportedVersion) as ei:
+        pick_adapter(ver.encode() + b'\0' * 100)
+    assert 'AC1015' in str(ei.value) and 'AC1032' in str(ei.value) or 'unknown or unsupported' in str(ei.value)

@@ -494,3 +494,41 @@ def test_full_fsync_darwin_uses_fullfsync(monkeypatch, tmp_path):
     assert calls == [51]
     fake.fcntl = lambda fd, op, *a: (_ for _ in ()).throw(OSError('unsupported'))      # drive without F_FULLFSYNC: falls back to fsync
     with open(tmp_path / 'g', 'wb') as f: atomic.full_fsync(f.fileno())
+
+
+def test_journal_replay_equals_edit_list_50_sessions(tmp_path):
+    """50 random sessions, each crashed at a random point (file closed without 'closed', last line torn at a random byte): the recovered
+    entries equal the logged edits up to the torn one, in order; closed sessions leave nothing behind"""
+    import random, json as _json
+    from savegate.journal import Journal, unfinished
+    rng = random.Random(7); jd = str(tmp_path / 'j'); expect = {}
+    for s in range(50):
+        j = Journal('/x/src%d.dwg' % s, jd)
+        edits = [dict(op=rng.choice(['move', 'erase', 'copy', 'props']), handle=rng.randrange(1 << 20), args=[rng.random() for _ in range(rng.randrange(4))]) for _ in range(rng.randrange(0, 30))]
+        for e in edits: j.log('edit', **e)
+        if s % 5 == 0:
+            j.close(done=True)               # clean close: no journal remains
+            continue
+        j.close(done=False)
+        raw = open(j.path, 'rb').read()
+        if s % 2:                            # tear the last line at a random byte (power loss during the append)
+            last = raw.rstrip(b'\n').rfind(b'\n') + 1
+            cut = rng.randrange(last + 1, len(raw) - 1) if len(raw) - 2 > last + 1 else len(raw)
+            open(j.path, 'wb').write(raw[:cut]); torn = cut < len(raw)
+        else: torn = False
+        expect[j.path] = (edits, torn)
+    got = {p: ents for p, ents in unfinished(jd)}
+    assert set(got) == {p for p, (e, t) in expect.items()}
+    for p, (edits, torn) in expect.items():
+        rec = [{k: v for k, v in x.items() if k not in ('t', 'kind')} for x in got[p] if x['kind'] == 'edit']
+        want = edits[:-1] if torn and edits else edits
+        assert rec == want, p
+
+
+def test_orphan_temp_files_of_crashed_saves_are_cleaned(tmp_path):
+    p = mk(tmp_path)
+    old = tmp_path / '.a.bin.deadbeef.sgtmp'; old.write_bytes(b'partial'); t = time.time() - 7200; os.utime(old, (t, t))
+    fresh = tmp_path / '.a.bin.cafe.sgtmp'; fresh.write_bytes(b'inprogress')           # maybe another live save: kept
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc:
+        assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
+    assert not old.exists() and fresh.exists()      # open_doc sweeps temps older than 1 h (crash leftovers), keeps recent ones

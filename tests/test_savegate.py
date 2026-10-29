@@ -390,3 +390,18 @@ def test_rvt_declared_element_edit_tolerates_holding_streams(tmp_path):
     with pytest.raises(sg.VerifyFailed): sg.save(doc, mod, {})                             # nothing declared
     with pytest.raises(sg.VerifyFailed): sg.save(doc, mod, {'modified': ['el:8']})         # wrong element declared
     assert sg.save(doc, mod, {'modified': ['el:7']}).ok
+
+
+def test_gate_open_requires_complete_ledger(tmp_path, monkeypatch):
+    from savegate import evidence
+    led = tmp_path / 'ledger.tsv'
+    rows = ['sha\tAC1032\t%s\tAUDIT_OK\t2026' % r for r in evidence.DWG_ROWS[:-1]]
+    led.write_text('\n'.join(rows) + '\n')
+    assert evidence.missing(str(led), 'dwg', 'AC1032') == [evidence.DWG_ROWS[-1]]
+    monkeypatch.setenv('SAVEGATE_GATE', str(tmp_path / 'gate.json'))
+    from savegate.__main__ import main
+    assert main(['gate', 'open', 'dwg', 'AC1032', '--evidence', str(led)]) == 3        # one row missing: refused
+    led.write_text('\n'.join(rows + ['sha\tAC1032\t%s\tFAIL x\t2026' % evidence.DWG_ROWS[-1]]) + '\n')
+    assert evidence.missing(str(led), 'dwg', 'AC1032')                                 # a FAIL row does not count
+    led.write_text('\n'.join(rows + ['sha\tAC1032\t%s\tAUDIT_OK\t2026' % evidence.DWG_ROWS[-1]]) + '\n')
+    assert main(['gate', 'open', 'dwg', 'AC1032', '--evidence', str(led)]) == 0

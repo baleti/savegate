@@ -25,6 +25,9 @@ def main(a):
             if '--evidence' not in a or not os.path.exists(a[a.index('--evidence') + 1]):
                 print('refused: --evidence FILE (oracle matrix result) required'); return 3
             ev = a[a.index('--evidence') + 1]
+            from savegate import evidence
+            miss = evidence.missing(ev, a[2], a[3])
+            if miss: print('refused: ledger lacks OK rows for %s %s: %s' % (a[2], a[3], ', '.join(miss))); return 3
             g.setdefault(a[2], {})[a[3]] = 'open'; g.setdefault('_evidence', {})['%s/%s' % (a[2], a[3])] = ev
         elif a[1] == 'close': g.setdefault(a[2], {})[a[3]] = 'closed'
         else: print(__doc__); return 2
@@ -33,4 +36,4 @@ def main(a):
         t = write_temp(p, json.dumps(g, indent=1).encode()); commit_temp(t, p); print('ok'); return 0
     print(__doc__); return 2
 
-sys.exit(main(sys.argv[1:]))
+if __name__ == '__main__': sys.exit(main(sys.argv[1:]))

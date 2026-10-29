@@ -59,18 +59,29 @@ class Lock:
         self.target = path; self.lp = _lock_path(path); self.stale_after = stale_after; self.held = False
 
     def acquire(self):
+        denied = 0
         for _ in range(2):
-            try:
-                fd = os.open(long_path(self.lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            except PermissionError as e:
-                raise DiskError('cannot create lock file %s: %s' % (self.lp, e)) from e
-            except FileExistsError:
-                verdict = self._stale()
-                if verdict is None: continue                     # the lock vanished while we looked: just try to create it again
-                if verdict:
-                    self._take_over_stale()
-                    continue
-                raise Locked('%s is being saved by another process (%s)' % (self.target, self._owner()))
+            while True:
+                try:
+                    fd = os.open(long_path(self.lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    break
+                except PermissionError as e:
+                    # Windows: creating a name whose previous file is still delete-pending (another process holds a handle) fails with access
+                    # denied for a few milliseconds: that is "somebody else is on it", not a broken folder. Retry briefly, then report busy.
+                    if os.name == 'nt' and os.access(os.path.dirname(os.path.abspath(self.lp)), os.W_OK):
+                        denied += 1
+                        if denied > 100: raise Locked('%s is busy (lock file stays delete-pending)' % self.target) from e
+                        time.sleep(0.01 * min(denied, 10)); continue
+                    raise DiskError('cannot create lock file %s: %s' % (self.lp, e)) from e
+                except FileExistsError:
+                    fd = None; break
+            if fd is None:
+                    verdict = self._stale()
+                    if verdict is None: continue                     # the lock vanished while we looked: just try to create it again
+                    if verdict:
+                        self._take_over_stale()
+                        continue
+                    raise Locked('%s is being saved by another process (%s)' % (self.target, self._owner()))
             self.held = True
             try:
                 with os.fdopen(fd, 'w') as f:
@@ -121,8 +132,12 @@ class Lock:
 
     def release(self):
         if self.held:
-            try: os.remove(long_path(self.lp))
-            except OSError: pass
+            # Windows: a racer that is reading the lock file at this very moment makes os.remove fail with a sharing violation; giving up here
+            # would leave a lock of a LIVE pid behind forever (everybody waits for us), so retry briefly
+            for i in range(200):
+                try: os.remove(long_path(self.lp)); break
+                except FileNotFoundError: break
+                except OSError: time.sleep(0.005 * min(i + 1, 10))
             self.held = False
 
     def __enter__(self): return self.acquire()

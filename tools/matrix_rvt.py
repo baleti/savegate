@@ -17,7 +17,7 @@ def main():
     rows = []
     def emit(path, year, row):
         sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()[:8]; res = 'not_run'
-        if opn:
+        if opn and row in os.environ.get('SG_ROWS', row).split(','):
             tmp = os.path.join(out, '%s_writer_sg%s%s.rte' % (year, row.replace('_', ''), sha))   # the write-lab guest job needs a '<year>_writer_*' style name (other names failed with the add-in port refused)
             open(tmp, 'wb').write(open(path, 'rb').read())
             for attempt in range(int(os.environ.get("SG_ATTEMPTS", "3"))):

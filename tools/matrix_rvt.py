@@ -22,7 +22,7 @@ def main():
             open(tmp, 'wb').write(open(path, 'rb').read())
             for attempt in range(int(os.environ.get("SG_ATTEMPTS", "3"))):
                 time.sleep(int(os.environ.get("SG_SETTLE", "20")))      # let the previous Revit instance and its add-in port settle (back-to-back fresh starts refused the port)     # the guest add-in port sometimes refuses right after a fresh Revit start: harness flake, retry (same bytes)
-                r = subprocess.run(['python3', WL + '/tools/open_test.py', year, tmp, 'sg%s%s%d' % (row[:3], sha, attempt)], capture_output=True, text=True, cwd=WL, timeout=7200)
+                r = subprocess.run(['python3', os.environ.get('SG_OPEN_TOOL', WL + '/tools/open_test.py'), year, tmp, 'sg%s%s%d' % (row[:3], sha, attempt)], capture_output=True, text=True, cwd=WL, timeout=7200)
                 res = (r.stdout.strip().splitlines() or ['NO_OUTPUT ' + r.stderr[-200:]])[-1]
                 res = 'OPEN_OK' if 'ok=True' in res else 'FAIL ' + res
                 if res == 'OPEN_OK': break

@@ -27,7 +27,7 @@ for name, vp in variants:
     if '--open' in sys.argv:
         for att in range(int(os.environ.get('SG_ATTEMPTS', '6'))):
             time.sleep(30)
-            o = subprocess.run(['python3', WL + '/tools/open_test.py', year, p, 'sgc%s%d' % (sha, att)], capture_output=True, text=True, cwd=WL, timeout=9000)
+            o = subprocess.run(['python3', os.environ.get('SG_OPEN_TOOL', WL + '/tools/open_test.py'), year, p, 'sgc%s%d' % (sha, att)], capture_output=True, text=True, cwd=WL, timeout=9000)
             res = 'OPEN_OK' if 'ok=True' in o.stdout else 'FAIL'
             if res == 'OPEN_OK': break
         res += ' (attempt %d)' % (att + 1)

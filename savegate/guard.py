@@ -65,9 +65,10 @@ class Lock:
             except PermissionError as e:
                 raise DiskError('cannot create lock file %s: %s' % (self.lp, e)) from e
             except FileExistsError:
-                if self._stale():
-                    try: os.remove(long_path(self.lp))
-                    except OSError: pass
+                verdict = self._stale()
+                if verdict is None: continue                     # the lock vanished while we looked: just try to create it again
+                if verdict:
+                    self._take_over_stale()
                     continue
                 raise Locked('%s is being saved by another process (%s)' % (self.target, self._owner()))
             self.held = True
@@ -85,13 +86,38 @@ class Lock:
             with open(long_path(self.lp)) as f: return f.read()
         except OSError: return '?'
 
+    def _read_raw(self):
+        with open(long_path(self.lp)) as f: return f.read()
+
     def _stale(self):
-        try:
-            with open(long_path(self.lp)) as f: d = json.load(f)
-        except (OSError, ValueError):
-            return True
+        """True = stale, False = live, None = the lock file disappeared while we looked"""
+        try: raw = self._read_raw()
+        except FileNotFoundError: return None
+        except OSError: return False                                  # cannot read it right now (Windows sharing): treat as live
+        try: d = json.loads(raw)
+        except ValueError:
+            # empty / partial: a holder between O_EXCL create and its owner write; only old ones are stale
+            try: return time.time() - os.stat(long_path(self.lp)).st_mtime > 10
+            except FileNotFoundError: return None
+            except OSError: return False
+        self._judged = raw
         if time.time() - d.get('time', 0) > self.stale_after: return True
         return d.get('host') == socket.gethostname() and not _pid_alive(int(d.get('pid', 0)))
+
+    def _take_over_stale(self):
+        """move the stale lock aside atomically (only one racer wins the rename); if what we moved is not what we judged, a new holder
+        had replaced it in between: put it back when the name is still free"""
+        tmp = '%s.stale.%d.%s' % (self.lp, os.getpid(), os.urandom(3).hex())
+        try: os.replace(long_path(self.lp), long_path(tmp))
+        except OSError: return
+        try:
+            with open(long_path(tmp)) as f: moved = f.read()
+        except OSError: moved = None
+        if moved is not None and getattr(self, '_judged', None) is not None and moved != self._judged:
+            try: os.link(long_path(tmp), long_path(self.lp))      # fails if somebody created a new lock meanwhile (then theirs wins)
+            except OSError: pass
+        try: os.remove(long_path(tmp))
+        except OSError: pass
 
     def release(self):
         if self.held:

@@ -87,15 +87,18 @@ def _verify(doc, new_bytes, manifest):
 
 def _produce(doc, new_bytes, manifest, dest, verify):
     """write temp, verify the bytes AS READ BACK FROM DISK; returns (tmp, report)"""
-    manifest = manifest or {}
+    manifest = manifest or {}; T = {}; t = time.time()
     try:
         tmp = atomic.write_temp(dest, new_bytes)
     except OSError as e:
         raise DiskError('cannot write temp file next to %s: %s' % (dest, e)) from e
     try:
+        T['write_tmp'] = time.time() - t; t = time.time()
         with open(long_path(tmp), 'rb') as f: back = f.read()
         if back != new_bytes: raise DiskError('read-back of temp file differs (short write?)')
+        T['readback'] = time.time() - t; t = time.time()
         rep = _verify(doc, back, manifest) if verify else {'verify': 'skipped'}
+        T['verify'] = time.time() - t; rep['timing'] = T
     except BaseException:
         try: os.remove(long_path(tmp))
         except OSError: pass
@@ -172,9 +175,9 @@ def _save(doc, new_bytes, manifest, force, verify):
         tmp, rep = _produce(doc, new_bytes, manifest, doc.path, verify)
         try:
             if not force: check_unchanged(doc.path, doc.fingerprint, rehash=True)   # last check right before rename
-            backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes)
+            tb = time.time(); backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes); rep.setdefault('timing', {})['backup'] = time.time() - tb
             if doc.journal: doc.journal.log('commit', backup=backup)
-            atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly)
+            tb = time.time(); atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly); rep['timing']['commit'] = time.time() - tb
         except BaseException:
             try: os.remove(long_path(tmp))
             except OSError: pass

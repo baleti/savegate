@@ -640,3 +640,19 @@ def test_contract_fake_viewer_session(tmp_path, monkeypatch):
     # RECOVER lists a session that was never closed
     d = sg.open_doc(str(src), RawAdapter(), c2); d.journal.log('edit', op='move', handle=1)
     assert any(len(ents) >= 1 for p, ents in sg.recover())
+
+
+def test_block_record_dropping_out_of_the_listing_is_refused():
+    """c8-perf: a flipped bit in a BLOCK_HEADER made its entities unreachable; the fast path saw identical raw records and accepted.
+    Unit level (a real flip needs a compressed-section offset): stub models whose output no longer lists block 0x70."""
+    from savegate.adapters import DwgAdapter
+    class O:
+        def __init__(s, t, raw): s.type = t; s.raw = raw
+    class M:
+        def __init__(s, blocks): s.blocks = blocks; s.objs = {h: O(49, b'x') for h in blocks}
+    a = DwgAdapter.__new__(DwgAdapter); a.owners = {}; a.bheaders = {}; a.dimobjs = {}; a.blockhs = set(); a.dims = set()
+    src = M({0x1f: '*Model_Space', 0x70: 'DOOR'}); out = M({0x1f: '*Model_Space'}); out.objs[0x70] = O(49, b'x')
+    a._pair = (src, out)
+    assert ('block_unlisted', 'obj:70') in a.extra_checks({})
+    assert ('block_unlisted', 'obj:70') not in a.extra_checks({'deleted': [0x70]})        # declared deletion of that record is fine
+    a._pair = (src, M({0x1f: '*Model_Space', 0x70: 'DOOR'})); assert a.extra_checks({}) == []

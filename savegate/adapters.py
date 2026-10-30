@@ -126,9 +126,14 @@ class DwgAdapter:
             p = mo.objs.get(h)
             if p is None or p.raw == o.raw: continue
             if o.type in (4, 5): bad.append(('struct_changed', 'obj:%x' % h))
-            elif o.type == 49 and ms.blocks.get(h) != mo.blocks.get(h): bad.append(('block_renamed', 'obj:%x' % h))
+            elif o.type == 49 and _plain(ms.blocks.get(h)) != _plain(mo.blocks.get(h)): bad.append(('block_renamed', 'obj:%x' % h))
         for h, n in ms.blocks.items():
-            if h in mo.blocks and mo.blocks[h] != n and ('block_renamed', 'obj:%x' % h) not in bad: bad.append(('block_renamed', 'obj:%x' % h))
+            if h in mo.blocks and _plain(mo.blocks[h]) != _plain(n) and ('block_renamed', 'obj:%x' % h) not in bad: bad.append(('block_renamed', 'obj:%x' % h))
+        # a block record that stops being listed turns every entity it owns into an orphan that no reader walks (entities silently vanish; c8-perf 2026-10-30):
+        # allowed only for a declared deletion (a dimension's anonymous block) or when it was never a block of the source
+        mod, add, dele = self.expand(manifest); ok = dele | self.side_effects(manifest)
+        for h in ms.blocks:
+            if h not in mo.blocks and 'obj:%x' % h not in ok: bad.append(('block_unlisted', 'obj:%x' % h))
         return bad
 
     # structural objects/header vars that legitimately change with add/delete/edit

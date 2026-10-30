@@ -888,3 +888,20 @@ def test_rvt_family_edit_2024_2026_valid_and_other_years_refused(tmp_path):
     p = tmp_path / 'f2020.rfa'; p.write_bytes(open(os.path.join(RFA, 'racbasicsamplefamily-2020.rfa'), 'rb').read()); h = hashlib.sha256(p.read_bytes()).hexdigest()
     with pytest.raises(Exception) as ei: sg.open_doc(str(p), None, cfg())
     assert 'cannot be saved' in str(ei.value) and hashlib.sha256(p.read_bytes()).hexdigest() == h
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_gate_refuses_a_valid_but_undeclared_stream_change(tmp_path):
+    """c5x-rvtgap: a stream rewritten with correct ECC and gzip CRC (so it is 'clean') but NOT declared modified is a hash-diff violation: refused, original untouched"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); import hashlib, zlib
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); c = cfb.CFB(raw)
+    n = [k for k in c.streams() if k.startswith('Global/') and k not in ('Global/ContentDocuments',)][0]
+    st = rvtw.Stream(c.streams()[n].data); P = bytearray(st.payload); i = P.find(rvtw.GZ); assert i >= 0
+    r, end = rvtw.read_member(bytes(P), i); r2 = bytearray(r); r2[len(r2) // 2] ^= 1
+    P2 = bytes(P[:i]) + rvtw.gz_member(bytes(r2), bytes(P[i:i + 10]), None) + bytes(P[end:])
+    c.streams()[n].data = st.build(P2, keep_spare=False); o = str(tmp_path / 'o.rte'); cfb.write(c, o); new = open(o, 'rb').read()
+    ad = RvtAdapter(); assert ad.source_damage(new) == []
+    p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), None, cfg()), new, {'modified': ['stream:Partitions/none']})
+    assert hashlib.sha256(p.read_bytes()).hexdigest() == h

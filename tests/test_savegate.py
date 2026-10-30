@@ -872,3 +872,19 @@ def test_rvt_container_rewrite_is_a_fixed_point_and_keeps_size(tmp_path):
         raw = open(os.path.join(RFA, n), 'rb').read(); a, b = str(tmp_path / 'a'), str(tmp_path / 'b')
         cfb.write(cfb.CFB(raw), a); b1 = open(a, 'rb').read(); cfb.write(cfb.CFB(b1), b)
         assert open(b, 'rb').read() == b1 and len(b1) == len(raw), n
+
+
+@pytest.mark.skipif(not os.path.isdir(RFA), reason='Autodesk sample rfa absent')
+def test_rvt_family_edit_2024_2026_valid_and_other_years_refused(tmp_path):
+    """c5x-rvtgap: a string edit on the Autodesk sample family of 2024/2026 yields a clean (ECC/CRC) output with the same id set that the adapter validates; the 2020 family is refused by the gate (writable years only), file untouched"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit'); import hashlib
+    for y in ('2024', '2026'):
+        src = os.path.join(RFA, 'racbasicsamplefamily-%s.rfa' % y); ed = wledit.Editor(src); ids = sorted(ed.m.ids)
+        log = ed.trace(0)[3]; l = next(l for l in log if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None')
+        ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / ('o%s.rfa' % y)); ed.save(o); b = open(o, 'rb').read()
+        ad = RvtAdapter(); assert ad.sniff(b) == y and ad.source_damage(b) == [] and ad.validate(b)
+        assert sorted(wledit.Editor(o).m.ids) == ids
+    p = tmp_path / 'f2020.rfa'; p.write_bytes(open(os.path.join(RFA, 'racbasicsamplefamily-2020.rfa'), 'rb').read()); h = hashlib.sha256(p.read_bytes()).hexdigest()
+    with pytest.raises(Exception) as ei: sg.open_doc(str(p), None, cfg())
+    assert 'cannot be saved' in str(ei.value) and hashlib.sha256(p.read_bytes()).hexdigest() == h

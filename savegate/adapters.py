@@ -259,7 +259,15 @@ class RvtAdapter:
                 if not n.startswith('Partitions/'): continue
                 st = rvtw.Stream(e.data)
                 if len(st.payload) < 40: continue
-                for k, m in enumerate(wlpart.Partition(st).mem):
+                pt = wlpart.Partition(st)
+                import struct
+                for k, m in enumerate(pt.mem):
+                    L = m['end'] - m['pos']
+                    if k < len(pt.gaps) and len(pt.gaps[k]) >= 32:       # c5x-rvtgap: frame after member k holds its own stored size + 8 and the next member's (0 across a section boundary); 0 violations in 35873 frames of 91 real partitions
+                        own = struct.unpack_from('<I', pt.gaps[k], 2)[0]; nxt = struct.unpack_from('<I', pt.gaps[k], 16)[0]
+                        Ln = pt.mem[k + 1]['end'] - pt.mem[k + 1]['pos'] if k + 1 < len(pt.mem) else None
+                        if own != L + 8 or (Ln is not None and nxt not in (0, Ln + 8)): raise VerifyFailed('%s member %d: frame size fields do not match the stored member length' % (n, k))
+                for k, m in enumerate(pt.mem):
                     if len(m['raw']) > 131088:       # every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
                         raise VerifyFailed('%s member %d holds %d bytes, above the 131088 Revit limit' % (n, k, len(m['raw'])))
         except VerifyFailed: raise

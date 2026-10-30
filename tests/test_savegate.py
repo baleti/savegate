@@ -905,3 +905,17 @@ def test_rvt_gate_refuses_a_valid_but_undeclared_stream_change(tmp_path):
     p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
     with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), None, cfg()), new, {'modified': ['stream:Partitions/none']})
     assert hashlib.sha256(p.read_bytes()).hexdigest() == h
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_validate_refuses_stale_partition_frame_size(tmp_path):
+    """c5x-rvtgap: an output partition whose member was re-deflated without updating the 32-byte frame size fields (ECC and CRC all valid) is refused; the real edit output passes"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); wlpart = pytest.importorskip('wlpart')
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); assert RvtAdapter().validate(raw)
+    c = cfb.CFB(raw); n = sorted(k for k in c.streams() if k.startswith('Partitions/') and len(rvtw.Stream(c.streams()[k].data).payload) > 40)[0]
+    st = rvtw.Stream(c.streams()[n].data); pt = wlpart.Partition(st); pt.mem[0]['dirty'] = True; pt.mem[0]['raw'] += b'\0'      # bytes appended, frame fields not updated (cascade/rebuild would fix them)
+    P0 = st.payload; m = pt.mem[0]
+    P2 = P0[:m['pos']] + rvtw.gz_member(bytes(m['raw']), m['gzhdr'], None) + P0[m['end']:]
+    c.streams()[n].data = st.build(P2, keep_spare=False); o = str(tmp_path / 'o.rte'); cfb.write(c, o)
+    with pytest.raises(sg.VerifyFailed): RvtAdapter().validate(open(o, 'rb').read())

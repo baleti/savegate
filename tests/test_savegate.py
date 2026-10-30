@@ -681,3 +681,18 @@ def test_change_between_last_check_and_backup_is_refused(tmp_path, monkeypatch):
     assert open(p, 'rb').read() == b'0riginal', 'the other program\'s change was overwritten'
     assert 'not' in str(ei.value).lower() and not leftovers(tmp_path)
     assert any(open(b[1], 'rb').read() == b'0riginal' for b in sg.list_backups(p))      # its content is kept as a backup
+
+
+def test_change_in_the_last_instant_before_rename_is_rescued(tmp_path):
+    """c3x-e2e: a write landing after the last check/backup but before the rename cannot be refused any more; the replaced version is kept as a backup and reported"""
+    p = mk(tmp_path, b'original')
+    def hook(name):
+        if name == 'before_replace':
+            st = os.stat(p); open(p, 'wb').write(b'0riginal'); os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+    atomic._hook = hook
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc:
+        r = sg.save(doc, b'new content', {'modified': ['file']})
+    assert open(p, 'rb').read() == b'new content'
+    assert r.report.get('warnings') and 'another program' in r.report['warnings'][0]
+    assert any(open(b[1], 'rb').read() == b'0riginal' for b in sg.list_backups(p))
+    sg.restore(p, 0); assert open(p, 'rb').read() == b'0riginal'

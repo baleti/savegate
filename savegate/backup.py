@@ -58,6 +58,19 @@ def make_backup(path, keep=20, max_bytes=0, expect_sha=None):
     raise DiskError('cannot write a backup of %s: %s' % (path, last))
 
 
+def backup_bytes(path, data):
+    """store `data` as a backup of `path` (same naming and hash tag as make_backup, so list/restore/verify work); used to rescue a version that was just replaced"""
+    h = hashlib.sha256(data).hexdigest(); stamp = time.strftime('%Y%m%d-%H%M%S') + '-%03d' % (time.time() * 1000 % 1000)
+    last = None
+    for bd in backup_dirs(path):
+        try:
+            os.makedirs(long_path(bd), exist_ok=True); dst = os.path.join(bd, '%s.%s-%s' % (os.path.basename(path), stamp, h[:8])); part = dst + '.part'
+            with open(long_path(part), 'wb') as b: b.write(data); b.flush(); full_fsync(b.fileno())
+            os.replace(long_path(part), long_path(dst)); fsync_dir(bd); return dst
+        except OSError as e: last = e
+    raise DiskError('cannot write a backup of %s: %s' % (path, last))
+
+
 def _prune(path, keep, max_bytes=0):
     """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
     bl = list_backups(path)

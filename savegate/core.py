@@ -177,7 +177,17 @@ def _save(doc, new_bytes, manifest, force, verify):
             if not force: check_unchanged(doc.path, doc.fingerprint, rehash=True)   # last check right before rename
             tb = time.time(); backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes, None if force else doc.fingerprint.sha256); rep.setdefault('timing', {})['backup'] = time.time() - tb
             if doc.journal: doc.journal.log('commit', backup=backup)
+            old = None
+            if os.name != 'nt' and not force:
+                try: old = open(long_path(doc.path), 'rb')          # keeps the replaced version readable after the rename (POSIX)
+                except OSError: old = None
             tb = time.time(); atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly); rep['timing']['commit'] = time.time() - tb
+            if old is not None:
+                with old:
+                    prev = old.read()
+                if hashlib.sha256(prev).hexdigest() != doc.fingerprint.sha256 and doc.fingerprint.sha256:     # changed in the last milliseconds before the rename
+                    from .backup import backup_bytes
+                    rep.setdefault('warnings', []).append('another program changed %s in the last moment before it was replaced; that version is kept as backup %s (RESTORE brings it back)' % (doc.path, backup_bytes(doc.path, prev)))
         except BaseException:
             try: os.remove(long_path(tmp))
             except OSError: pass

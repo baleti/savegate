@@ -33,7 +33,7 @@ class DwgAdapter:
     name = 'dwg'
     def __init__(self, lib=None):
         lib = lib or os.environ.get('SAVEGATE_DWG_LIB') or os.path.expanduser('~/dwg-write')
-        self.owners = {}; self.bheaders = {}; self.dimobjs = {}
+        self.owners = {}; self.bheaders = {}; self.dimobjs = {}; self.blockhs = set()
         if lib not in sys.path: sys.path.insert(0, lib)
 
     def sniff(self, buf):
@@ -51,6 +51,7 @@ class DwgAdapter:
             out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, _plain(v)) for k, v in e.items())) + '|' + _plain(blk)).encode(), digest_size=12).digest()
             ent_handles.add(e['handle']); self.owners[e['handle']] = e.get('owner')
             if str(e.get('kind', '')).startswith(('INSERT', 'MINSERT')) and isinstance(e.get('block_handle'), int): self.bheaders[e['handle']] = e['block_handle']
+        self.blockhs |= set(getattr(m, 'blocks', {}))   # block records own entities but are not entities: declaring one must not excuse all its entities
         dimblk = {e['block_ref']: e['handle'] for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if hasattr(m, 'entities') else {}
         self.dims = getattr(self, 'dims', set()) | set(dimblk.values())
         bhmap = {e['handle']: e.get('block_handle') for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if dimblk else {}
@@ -136,7 +137,7 @@ class DwgAdapter:
         # owned sub-entities (POLYLINE vertices, SEQEND, INSERT attributes) belong to the declared entity
         decl = {k for kind in ('modified', 'added', 'deleted') for k in manifest.get(kind, ()) if isinstance(k, int)}
         for h, o in self.owners.items():
-            if o in decl: se |= {'ent:%x' % h, 'obj:%x' % h}
+            if o in decl and o not in self.blockhs: se |= {'ent:%x' % h, 'obj:%x' % h}
         for k in list(manifest.get('added', ())) + list(manifest.get('deleted', ())):
             if isinstance(k, int):
                 se.add('hdr:HANDSEED')

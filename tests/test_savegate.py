@@ -584,3 +584,17 @@ def test_backup_size_cap_and_damaged_backup_not_restored(tmp_path, monkeypatch):
         B.restore(str(p))
     assert p.read_bytes() == b'current'                                  # target untouched
     assert B.restore(str(p), 1) if len(bl) > 1 else True
+
+
+def test_declared_block_record_does_not_excuse_its_entities(tmp_path):
+    """c8-perf escape class: a flip inside an entity record passed when the owning BLOCK_HEADER was declared modified."""
+    import sys
+    sys.path.insert(0, os.path.expanduser('~/dwg-write'))
+    dwgdoc = pytest.importorskip('dwgdoc'); X = pytest.importorskip('dwgxform'); wtest = pytest.importorskip('wtest')
+    d0 = dwgdoc.Doc(open(os.path.expanduser('~/dwg-write/templates/blank_2018.dwg'), 'rb').read()); wtest.basic(d0)
+    p = tmp_path / 'f.dwg'; p.write_bytes(d0.save())
+    d = dwgdoc.Doc(p.read_bytes()); hs = list(d.entities('*Model_Space')); ms = d.model_space()
+    d.transform(hs[0], X.Transform.translate(1, 1)); d.transform(hs[1], X.Transform.translate(2, 2))       # hs[1] is NOT declared
+    with sg.open_doc(str(p), None, cfg()) as doc:
+        with pytest.raises(sg.VerifyFailed):
+            sg.save_as(doc, d.save(), str(tmp_path / 'o.dwg'), {'modified': [hs[0], ms]}, overwrite=True)

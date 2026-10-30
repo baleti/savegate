@@ -25,6 +25,7 @@ def _plain(v):
     return re.sub(r"(\*[A-Za-z]+)~[0-9a-f]+", r"\1", repr(v) if not isinstance(v, str) else v)
 
 
+_DWG_NAMES = {'AC1006': 'R10', 'AC1009': 'R11/R12', 'AC1012': 'R13', 'AC1014': 'R14', 'AC1015': '2000', 'AC1018': '2004', 'AC1021': '2007', 'AC1024': '2010', 'AC1027': '2013', 'AC1032': '2018+'}
 _SUBENT = {2, 6, 10, 11, 12, 13, 14, 15}   # ATTRIB, SEQEND, VERTEX kinds
 
 
@@ -39,7 +40,8 @@ class DwgAdapter:
         v = buf[:6].decode('ascii', 'replace')
         if not re.fullmatch(r'AC10\d\d', v): return None
         if v not in DWG_WRITABLE:
-            raise UnsupportedVersion('DWG %s cannot be saved (writable: %s)' % (v, ', '.join(DWG_WRITABLE)))
+            raise UnsupportedVersion('DWG %s (%s) cannot be saved: writable versions are %s. The file was not touched; export a copy as DXF or '
+                                     'Save As one of the writable versions instead.' % (v, _DWG_NAMES.get(v, 'unknown'), ', '.join('%s (%s)' % (w, _DWG_NAMES[w]) for w in DWG_WRITABLE)))
         return v
 
     def _snap(self, m, same):
@@ -177,7 +179,8 @@ class RvtAdapter:
         m = re.search(r'(20[12]\d)', t)
         v = m.group(1) if m else '?'
         if v not in RVT_WRITABLE:
-            raise UnsupportedVersion('RVT %s cannot be saved (writable: %s)' % (v, ', '.join(RVT_WRITABLE)))
+            raise UnsupportedVersion('Revit %s file cannot be saved: writable years are %s. The file was not touched; open it in Revit and Save As a '
+                                     'writable year, or save the edit as a new file with the writer.' % (v, ', '.join(RVT_WRITABLE)))
         return v
 
     def snapshot(self, buf):

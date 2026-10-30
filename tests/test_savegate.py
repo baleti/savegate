@@ -540,3 +540,28 @@ def test_unsupported_dwg_versions_named_clearly(ver):
     with pytest.raises(sg.UnsupportedVersion) as ei:
         pick_adapter(ver.encode() + b'\0' * 100)
     assert 'AC1015' in str(ei.value) and 'AC1032' in str(ei.value) or 'unknown or unsupported' in str(ei.value)
+
+
+def test_unsupported_message_names_alternatives():
+    from savegate.adapters import pick_adapter
+    with pytest.raises(sg.UnsupportedVersion) as ei:
+        pick_adapter(b'AC1021' + b'\0' * 100)
+    m = str(ei.value)
+    assert 'AC1021 (2007)' in m and 'AC1015 (2000)' in m and 'AC1032 (2018+)' in m and 'DXF' in m and 'not touched' in m
+
+
+@pytest.mark.parametrize('year', ['2017', '2019', '2022', '2025'])
+def test_rvt_other_years_refused_with_clear_message(year, tmp_path):
+    seed = os.environ.get('SG_RVT_SEED', '/tmp/sgcl3/2024_a.rte')       # writer-made synthetic scene, local only
+    if not os.path.exists(seed): pytest.skip('no synthetic RVT seed (SG_RVT_SEED)')
+    cfb = pytest.importorskip('cfb', reason='write-lab module, local only')
+    from savegate.adapters import pick_adapter
+    buf = open(seed, 'rb').read(); c = cfb.CFB(buf); e = c.streams()['BasicFileInfo']
+    txt = e.data.decode('utf-16le', 'ignore')
+    assert '2024' in txt
+    e.data = txt.replace('2024', year).encode('utf-16le')
+    out = tmp_path / 'y.rvt'; cfb.write(c, str(out))
+    with pytest.raises(sg.UnsupportedVersion) as ei:
+        pick_adapter(out.read_bytes())
+    m = str(ei.value)
+    assert year in m and '2024' in m and '2026' in m and 'not touched' in m

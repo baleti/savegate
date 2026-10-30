@@ -2,6 +2,11 @@
 ESCAPE = accepted although the decoded block names / entity count differ from the expected result. usage: gate_bitflip.py TRIALS [version]"""
 import os, sys, random, tempfile
 sys.path[:0] = [os.path.join(os.path.dirname(__file__), '..'), os.path.expanduser('~/dwg-write')]
+import tempfile, atexit, shutil
+_dirs = []
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _dirs])
+def _mk(**kw):
+    d = tempfile.mkdtemp(**kw); _dirs.append(d); return d
 import savegate as sg, dwgdoc, wtest, dwgmodel
 n = int(sys.argv[1]); v = sys.argv[2] if len(sys.argv) > 2 else '2018'
 d0 = dwgdoc.Doc(open(os.path.expanduser('~/dwg-write/templates/blank_%s.dwg' % v), 'rb').read())

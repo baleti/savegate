@@ -4,6 +4,11 @@ Counts: saves, false alarms (VerifyFailed with an exact manifest), and for every
 that MUST be refused. usage: fuzz_dwg_savegate.py SEEDS STEPS [versions...]"""
 import os, sys, random, tempfile, collections
 sys.path[:0] = [os.path.join(os.path.dirname(__file__), '..'), os.path.expanduser('~/dwg-write')]
+import tempfile, atexit, shutil
+_dirs = []
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _dirs])
+def _mk(**kw):
+    d = tempfile.mkdtemp(**kw); _dirs.append(d); return d
 import savegate as sg, dwgdoc, dwgxform as X, wtest
 seeds, steps = int(sys.argv[1]), int(sys.argv[2]); vers = sys.argv[3:] or ['2000', '2004', '2010', '2013', '2018']
 cfg = sg.Config(allow_overwrite=True, require_gate=False, backup_keep=1)

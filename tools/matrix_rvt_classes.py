@@ -14,11 +14,13 @@ cfg = sg.Config(allow_overwrite=True, require_gate=False)
 A = open(a, 'rb').read(); ea = E.elements(A); rows = []
 for name, vp in variants:
     B = open(vp, 'rb').read(); eb = E.elements(B)
-    ids = [k for k in ea if ea[k] != eb.get(k)] + [k for k in eb if k not in ea]
+    mod = [k for k in ea if k in eb and ea[k] != eb[k]]; add = [k for k in eb if k not in ea]; dele = [k for k in ea if k not in eb]
+    ids = mod + add + dele
+    man = {'modified': ['el:%d' % i for i in mod], 'added': ['el:%d' % i for i in add], 'deleted': ['el:%d' % i for i in dele]}
     src = os.path.join(out, 'src.rte'); open(src, 'wb').write(A)
     with sg.open_doc(src, RvtAdapter(elements_fn=lambda b: ea if b == A else eb), cfg) as doc:
         p = os.path.join(out, '%s_writer_sgcls%s.rte' % (year, name))
-        sg.save_as(doc, B, p, {'modified': ['el:%d' % i for i in ids]}, overwrite=True)
+        sg.save_as(doc, B, p, man, overwrite=True)
     try:   # an undeclared run must be refused
         with sg.open_doc(src, RvtAdapter(elements_fn=lambda b: ea if b == A else eb), cfg) as doc:
             sg.save_as(doc, B, p + '.x', {}, overwrite=True); refused = False
@@ -31,4 +33,4 @@ for name, vp in variants:
             res = 'OPEN_OK' if 'ok=True' in o.stdout else 'FAIL'
             if res == 'OPEN_OK': break
         res += ' (attempt %d)' % (att + 1)
-    print(sha, 'RVT' + year, 'edit_' + name, res, 'n_el=%d undeclared_refused=%s' % (len(ids), refused), time.strftime('%Y-%m-%d'), sep='\t', flush=True)
+    print(sha, 'RVT' + year, 'edit_' + name, res, 'n_el=%d add=%d del=%d undeclared_refused=%s' % (len(ids), len(add), len(dele), refused), time.strftime('%Y-%m-%d'), sep='\t', flush=True)

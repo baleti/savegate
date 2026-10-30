@@ -868,7 +868,7 @@ def test_rvt_container_rewrite_is_a_fixed_point_and_keeps_size(tmp_path):
     """c5x-rvtgap: cfb.write(CFB(cfb.write(x))) == cfb.write(x) and the file size is unchanged, on Autodesk sample families 2016..2026 (4096 sectors, 64-byte mini sectors)"""
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     cfb = pytest.importorskip('cfb')
-    for n in sorted(os.listdir(RFA)):
+    for n in sorted(x for x in os.listdir(RFA) if x.endswith('.rfa')):
         raw = open(os.path.join(RFA, n), 'rb').read(); a, b = str(tmp_path / 'a'), str(tmp_path / 'b')
         cfb.write(cfb.CFB(raw), a); b1 = open(a, 'rb').read(); cfb.write(cfb.CFB(b1), b)
         assert open(b, 'rb').read() == b1 and len(b1) == len(raw), n

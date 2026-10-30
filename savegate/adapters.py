@@ -32,7 +32,7 @@ class DwgAdapter:
     name = 'dwg'
     def __init__(self, lib=None):
         lib = lib or os.environ.get('SAVEGATE_DWG_LIB') or os.path.expanduser('~/dwg-write')
-        self.owners = {}; self.bheaders = {}
+        self.owners = {}; self.bheaders = {}; self.dimobjs = {}
         if lib not in sys.path: sys.path.insert(0, lib)
 
     def sniff(self, buf):
@@ -51,6 +51,11 @@ class DwgAdapter:
             if str(e.get('kind', '')).startswith(('INSERT', 'MINSERT')) and isinstance(e.get('block_handle'), int): self.bheaders[e['handle']] = e['block_handle']
         dimblk = {e['block_ref']: e['handle'] for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if hasattr(m, 'entities') else {}
         self.dims = getattr(self, 'dims', set()) | set(dimblk.values())
+        bhmap = {e['handle']: e.get('block_handle') for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if dimblk else {}
+        for bn, dh in dimblk.items():   # the anonymous block's own objects: BLOCK_HEADER, BLOCK, ENDBLK (adjacent handles)
+            bh = bhmap.get(dh)
+            if isinstance(bh, int):
+                self.dimobjs[dh] = {'obj:%x' % x for x in range(bh, bh + 4) if x in m.objs and (x == bh or m.objs[x].type in (4, 5))}
         if dimblk:   # geometry of a dimension's anonymous block belongs to the dimension
             for blk, e in m.entities():
                 if blk in dimblk and e['handle'] != dimblk[blk]: self.owners[e['handle']] = dimblk[blk]
@@ -117,7 +122,7 @@ class DwgAdapter:
             if isinstance(k, int):
                 se.add('hdr:HANDSEED')
                 if k in self.bheaders: se.add('obj:%x' % self.bheaders[k])   # INSERT: the block record keeps the list of its inserts
-                if k in getattr(self, 'dims', ()): se |= {'obj:1'}   # adding/removing a dimension adds/removes its anonymous block: BLOCK_CONTROL object list
+                if k in getattr(self, 'dims', ()): se |= {'obj:1'} | self.dimobjs.get(k, set())   # adding/removing a dimension adds/removes its anonymous block: BLOCK_CONTROL object list
                 if self.owners.get(k) is not None: se.add('obj:%x' % self.owners[k])
         return se
 

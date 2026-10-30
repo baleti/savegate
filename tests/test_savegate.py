@@ -830,3 +830,21 @@ def test_rvt_edit_on_rosetta_scenes_changes_one_partition_and_only_the_edited_el
         try: return key(e, ed2)
         except Exception: return 'ERR'
     assert [e for e in before if k2(e) != before[e]] == [e0]
+
+
+RFA = os.path.expanduser('~/rvt-research/samples-rfa')
+
+
+@pytest.mark.skipif(not os.path.isdir(RFA), reason='Autodesk sample rfa absent')
+def test_rvt_writer_noedit_identity_on_autodesk_sample_family_every_year(tmp_path):
+    """c5x-rvtgap: Autodesk Basic Sample Family 2016..2026: no-edit save through the editor keeps every stream and every directory entry (13 streams each)"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    names = sorted(n for n in os.listdir(RFA) if n.endswith('.rfa')); assert len(names) == 11
+    meta = lambda c: [(e.name, e.type, e.color, e.left, e.right, e.child, bytes(e.clsid), e.state, bytes(e.ctime), bytes(e.mtime)) for e in c.entries if e.type]
+    for n in names:
+        o = str(tmp_path / 'o.rfa'); wledit.Editor(os.path.join(RFA, n)).save(o)
+        A, B = cfb.CFB(open(os.path.join(RFA, n), 'rb').read()), cfb.CFB(open(o, 'rb').read())
+        sa, sb = A.streams(), B.streams()
+        assert sa.keys() == sb.keys() and all(sa[k].data == sb[k].data for k in sa), n
+        assert meta(A) == meta(B), n

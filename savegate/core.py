@@ -134,6 +134,9 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
         return _save(doc, new_bytes, manifest, False, verify)
     if doc.journal: doc.journal.log('save_as_begin', dest=dest, size=len(new_bytes))
     tmp, rep = _produce(doc, new_bytes, manifest, dest, verify)
+    if hasattr(doc.adapter, 'source_damage'):
+        dm = doc.adapter.source_damage(doc.buf)
+        if dm: rep.setdefault('warnings', []).append('the SOURCE file is damaged (%d problem(s), first: %s); the copy carries the same damage and is not confirmed to open in the application' % (len(dm), dm[0]))
     backup = None
     try:
         if os.path.exists(long_path(dest)):
@@ -169,6 +172,9 @@ def _save(doc, new_bytes, manifest, force, verify):
     if cfg.require_gate and not gate_open(fmt, doc.version, cfg):
         raise GateClosed('overwrite of %s %s is not enabled: the oracle test matrix is not green' % (fmt, doc.version))
     _check_writable_target(doc.path, cfg)
+    if hasattr(doc.adapter, 'source_damage'):
+        dm = doc.adapter.source_damage(doc.buf)
+        if dm: raise VerifyFailed('the file is damaged (%d problem(s), first: %s); overwrite refused, the file was not touched. Use SAVE AS to write a copy.' % (len(dm), dm[0]), dict(source_damage=dm[:20]))
     with Lock(doc.path):
         if not force: check_unchanged(doc.path, doc.fingerprint)
         if doc.journal: doc.journal.log('save_begin', size=len(new_bytes))

@@ -696,3 +696,26 @@ def test_change_in_the_last_instant_before_rename_is_rescued(tmp_path):
     assert r.report.get('warnings') and 'another program' in r.report['warnings'][0]
     assert any(open(b[1], 'rb').read() == b'0riginal' for b in sg.list_backups(p))
     sg.restore(p, 0); assert open(p, 'rb').read() == b'0riginal'
+
+
+@pytest.mark.skipif(not os.path.exists(RTE), reason='write-lab scene absent (local only)')
+def test_rvt_damaged_source_not_overwritten(tmp_path):
+    """c3x-rvtgap: the reader tolerates a zeroed run / flipped bit in the source, the gate compares reader-vs-reader, so the damaged file used to be saved without a word"""
+    import random, hashlib
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb')
+    raw = open(RTE, 'rb').read(); rnd = random.Random(3); refused = 0
+    good = tmp_path / 'g.rte'; good.write_bytes(raw)
+    assert sg.save(sg.open_doc(str(good), None, cfg()), raw, {}).ok          # undamaged: identity save passes
+    for i in range(12):
+        b = bytearray(raw); o = rnd.randrange(8, len(b) - 64); b[o:o + 64] = bytes(64)
+        p = tmp_path / ('d%d.rte' % i); p.write_bytes(bytes(b)); h = hashlib.sha256(bytes(b)).hexdigest()
+        try: doc = sg.open_doc(str(p), None, cfg())
+        except sg.SaveError: continue                                         # unreadable container: refused earlier
+        try: sg.save(doc, bytes(b), {})
+        except sg.VerifyFailed as e:
+            assert 'damaged' in str(e) and 'not touched' in str(e); refused += 1
+        assert hashlib.sha256(p.read_bytes()).hexdigest() == h               # source untouched in every case
+    assert refused >= 8
+    r = sg.save_as(sg.open_doc(str(p), None, cfg()), bytes(b), str(tmp_path / 'copy.rte'), {})
+    assert r.ok and any('damaged' in w for w in r.report.get('warnings', []))

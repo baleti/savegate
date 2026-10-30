@@ -189,6 +189,37 @@ class RvtAdapter:
                                      'writable year, or save the edit as a new file with the writer.' % (v, ', '.join(RVT_WRITABLE)))
         return v
 
+    def source_damage(self, buf):
+        """problems in the SOURCE bytes the reader tolerates but the writer would carry over unchanged: bad page ECC, gzip CRC/size mismatch, bad inflate, unreadable container.
+        Plain XML / raw gzip streams carry no page ECC. [] = nothing found. (c3x-rvtgap: a zeroed 64-byte run used to be saved back without any warning.)"""
+        import struct, zlib, cfb, rvtw, ecc, wlpart
+        errs = []
+        try: S = cfb.CFB(bytes(buf)).streams()
+        except Exception as ex: return ['container unreadable: %s' % ex]
+        for n, e in S.items():
+            if n in rvtw.PLAIN or n.startswith('\x05'): continue      # OLE property-set streams are plain
+            d = e.data
+            if d[:5] == b'<?xml' or d[:2] == b'\x1f\x8b': continue
+            full = len(d) // rvtw.PAGE_STORED
+            bad = [i for i in range(full) if not ecc.check(d[i * rvtw.PAGE_STORED:(i + 1) * rvtw.PAGE_STORED])]
+            last = d[full * rvtw.PAGE_STORED:]
+            if last and (ecc.params(len(last)) is None or not ecc.check(last)): bad.append(full)
+            if bad: errs.append('%s: ECC bad on %d page(s), first %d' % (n, len(bad), bad[0]))
+            try:
+                P = rvtw.Stream(d).payload
+                if n.startswith('Partitions/'):
+                    if len(P) < 40: continue        # tiny partition: the parser needs a 36-byte frame
+                    for k, m in enumerate(wlpart.Partition(rvtw.Stream(d)).mem):
+                        raw = bytes(m['raw']); crc, isz = struct.unpack('<II', P[m['pos']:m['end']][-8:])
+                        if crc != zlib.crc32(raw) & 0xffffffff or isz != len(raw): errs.append('%s member %d: crc/size mismatch' % (n, k))
+                else:
+                    i = P.find(rvtw.GZ)
+                    if i < 0: continue
+                    do = zlib.decompressobj(-15); raw = do.decompress(P[i + 10:]); crc, isz = struct.unpack('<II', do.unused_data[:8])
+                    if crc != zlib.crc32(raw) & 0xffffffff or isz != len(raw) & 0xffffffff: errs.append('%s: crc/size mismatch' % n)
+            except Exception as ex: errs.append('%s: %s %s' % (n, type(ex).__name__, ex))
+        return errs
+
     def snapshot(self, buf):
         import cfb
         c = cfb.CFB(buf)

@@ -772,3 +772,61 @@ def test_orphan_temp_of_a_killed_save_is_swept_by_the_next_save(tmp_path):
     p = mk(tmp_path, b'original'); orphan = tmp_path / '.a.bin.abc123.sgtmp'; orphan.write_bytes(b'x' * 100); other = tmp_path / '.b.bin.abc123.sgtmp'; other.write_bytes(b'y')
     with sg.open_doc(p, RawAdapter(), cfg()) as doc: sg.save(doc, b'new content', {'modified': ['file']})
     assert not orphan.exists() and other.exists()       # only this target's orphans
+
+
+@pytest.mark.skipif(not os.path.isdir(VGS), reason='vg scenes absent (local only)')
+@pytest.mark.parametrize('name', ['2024_vg_worksets.rvt', '2026_vg_worksets.rvt'])
+def test_rvt_edit_keeps_every_other_element_and_the_id_set(name, tmp_path):
+    """c3x-rvtgap: after an edit of one string, the element id set is unchanged and every OTHER element decodes to the same field log (neighbours in the same partition, unknown classes included, are not dropped or reinterpreted)"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(VGS, name); ed = wledit.Editor(src)
+    old = [l[4] for l in ed.trace(2)[3] if l[1] == 'ProjectPhase.m_name'][0]
+    ids = sorted(ed.m.ids); before = {}
+    for e in ids:
+        try: before[e] = repr(ed.trace(e)[3])
+        except Exception: before[e] = 'ERR'
+    ed.set_string(2, 'ProjectPhase.m_name', old + 'XYZ', match=old); o = str(tmp_path / 'o.rvt'); ed.save(o)
+    ed2 = wledit.Editor(o)
+    assert sorted(ed2.m.ids) == ids
+    diff = []
+    for e in ids:
+        try: a = repr(ed2.trace(e)[3])
+        except Exception: a = 'ERR'
+        if a != before[e]: diff.append(e)
+    assert diff == [2]
+
+
+ROS = os.path.expanduser('~/rvt-research/write-lab/../rosetta')
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+@pytest.mark.parametrize('name', ['2024_roof_ceiling_base.rte', '2026_room_base.rte', '2026_railing_var.rte'])
+def test_rvt_edit_on_rosetta_scenes_changes_one_partition_and_only_the_edited_element(name, tmp_path):
+    """c3x-rvtgap: one string edit on writer scenes of both writable years: exactly one Partitions/N stream differs (same stored length), ECC/gzip CRC clean, validate ok, id set equal, every other element decodes to the same field log (offsets excluded: later elements shift)"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, name); ed = wledit.Editor(src); ids = sorted(ed.m.ids)
+    key = lambda e_, ed_: [(l[0], l[1], l[4]) for l in ed_.trace(e_)[3]]
+    cand = None
+    for e in ids[:600]:
+        try: log = ed.trace(e)[3]
+        except Exception: continue
+        for l in log:
+            if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None': cand = (e, l[1], l[4]); break
+        if cand: break
+    assert cand
+    before = {}
+    for e in ids[:300]:
+        try: before[e] = key(e, ed)
+        except Exception: before[e] = 'ERR'
+    e0, fn, v = cand; ed.set_string(e0, fn, v + 'XY', match=v); o = str(tmp_path / 'o.rte'); ed.save(o)
+    ob = open(o, 'rb').read(); A = cfb.CFB(open(src, 'rb').read()).streams(); B = cfb.CFB(ob).streams()
+    ch = [k for k in A if A[k].data != B[k].data]
+    assert len(ch) == 1 and ch[0].startswith('Partitions/') and len(A[ch[0]].data) == len(B[ch[0]].data)
+    ad = RvtAdapter(); assert ad.source_damage(ob) == [] and ad.validate(ob)
+    ed2 = wledit.Editor(o); assert sorted(ed2.m.ids) == ids
+    def k2(e):
+        try: return key(e, ed2)
+        except Exception: return 'ERR'
+    assert [e for e in before if k2(e) != before[e]] == [e0]

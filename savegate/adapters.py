@@ -241,7 +241,7 @@ class RvtAdapter:
         """With an element-level view, an element edit rewrites the partition / global streams that hold it; those stream keys
         are tolerated only when something is declared and the element keys (strict) cover the content. Identity stays byte-strict."""
         if not self.elements_fn or not any(manifest.get(k) for k in ('modified', 'added', 'deleted')): return set()
-        return {k for k in getattr(self, '_keys', ()) if k.startswith(('stream:Partitions/', 'stream:Global/'))}
+        return {k for k in getattr(self, '_keys', ()) if k.startswith('stream:Partitions/')}      # c5x-rvtgap: Global/* is NOT excused (the writer leaves every Global stream byte-identical on an element edit; a tampered one with valid ECC/CRC was accepted)
 
     def validate(self, buf):
         import cfb

@@ -919,3 +919,26 @@ def test_rvt_validate_refuses_stale_partition_frame_size(tmp_path):
     P2 = P0[:m['pos']] + rvtw.gz_member(bytes(m['raw']), m['gzhdr'], None) + P0[m['end']:]
     c.streams()[n].data = st.build(P2, keep_spare=False); o = str(tmp_path / 'o.rte'); cfb.write(c, o)
     with pytest.raises(sg.VerifyFailed): RvtAdapter().validate(open(o, 'rb').read())
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_element_view_does_not_excuse_a_tampered_global_stream(tmp_path, monkeypatch):
+    """c5x-rvtgap ESCAPE: with elements_fn and a declared element edit, side_effects used to excuse EVERY Global/* stream, so a Global stream rewritten with valid ECC+CRC went through. Legit edit passes, tampered Global stream refused."""
+    pytest.importorskip('numpy'); pytest.importorskip('olefile')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); wledit = pytest.importorskip('wledit')
+    from savegate.rvt_elements import elements
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
+    view = lambda b: elements(b, with_geometry=False)
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); raw = open(src, 'rb').read(); ed = wledit.Editor(src)
+    e, l = next((e, l) for e in sorted(ed.m.ids) for l in (ed.trace(e)[3] if e < 30000 else []) if l[1] == 'FamilyBase.m_name' and l[3] - l[2] == 4 + 2 * len(l[4]))
+    ed.set_string(e, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / 'ok.rte'); ed.save(o); ok = open(o, 'rb').read()
+    a0, b0 = view(raw), view(ok); decl = ['el:%d' % k for k in a0 if a0[k] != b0.get(k)]; assert decl and len(b0) == len(a0)
+    c = cfb.CFB(ok); n = 'Global/ContentDocuments'; st = rvtw.Stream(c.streams()[n].data); P = st.payload; i = P.find(rvtw.GZ)
+    r, end = rvtw.read_member(bytes(P), i); r2 = bytearray(r); r2[len(r2) // 2] ^= 1
+    c.streams()[n].data = st.build(bytes(P[:i]) + rvtw.gz_member(bytes(r2), bytes(P[i:i + 10]), None) + bytes(P[end:]), keep_spare=False)
+    t = str(tmp_path / 't.rte'); cfb.write(c, t); bad = open(t, 'rb').read(); assert RvtAdapter().source_damage(bad) == []
+    p = tmp_path / 'a.rte'; p.write_bytes(raw)
+    assert sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), ok, {'modified': decl}).ok
+    p.write_bytes(raw)
+    with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), bad, {'modified': decl})

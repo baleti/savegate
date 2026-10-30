@@ -11,3 +11,13 @@ class Locked(SaveError): pass
 class DiskError(SaveError): pass
 class Exists(SaveError): pass
 class ReadOnlyTarget(SaveError): pass     # target carries a read-only flag/mode; refused up front unless Config.allow_readonly
+
+
+def exit_code(exc):
+    """Batch/CLI exit code of the contract: 0 ok, 3 refused (disabled/gate/exists/unsupported/read-only), 4 conflict/locked, 5 verify failed, 6 disk error."""
+    if exc is None: return 0
+    if isinstance(exc, (OverwriteDisabled, GateClosed, Exists, UnsupportedVersion, ReadOnlyTarget)): return 3
+    if isinstance(exc, (Conflict, Locked)): return 4
+    if isinstance(exc, VerifyFailed): return 5
+    if isinstance(exc, DiskError): return 6
+    return 1

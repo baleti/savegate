@@ -598,3 +598,45 @@ def test_declared_block_record_does_not_excuse_its_entities(tmp_path):
     with sg.open_doc(str(p), None, cfg()) as doc:
         with pytest.raises(sg.VerifyFailed):
             sg.save_as(doc, d.save(), str(tmp_path / 'o.dwg'), {'modified': [hs[0], ms]}, overwrite=True)
+
+
+def test_contract_fake_viewer_session(tmp_path, monkeypatch):
+    """A fake viewer drives SAVEAS / SAVE / SAVE! / RESTORE / RECOVER exactly as savegate-contract.md says, checking the exit codes."""
+    monkeypatch.setenv('SAVEGATE_JOURNAL', str(tmp_path / 'j')); monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'c'))
+    monkeypatch.setenv('SAVEGATE_GATE', str(tmp_path / 'gate.json'))
+    src = tmp_path / 'm.bin'; src.write_bytes(b'v0')
+    def run(fn):
+        try: fn(); return 0
+        except sg.SaveError as e: return sg.exit_code(e)
+    c0 = sg.Config(allow_overwrite=False, require_gate=True)
+    with sg.open_doc(str(src), RawAdapter(), c0) as doc:
+        # SAVEAS new name: ok, source untouched
+        assert run(lambda: sg.save_as(doc, b'v1', str(tmp_path / 'n.bin'), {'modified': ['file']})) == 0
+        assert src.read_bytes() == b'v0'
+        # SAVEAS onto an existing file without confirm: refused (3); with confirm: ok, old dest backed up
+        assert run(lambda: sg.save_as(doc, b'v2', str(tmp_path / 'n.bin'), {'modified': ['file']})) == 3
+        assert run(lambda: sg.save_as(doc, b'v2', str(tmp_path / 'n.bin'), {'modified': ['file']}, overwrite=True)) == 0
+        assert (tmp_path / 'n.bin').read_bytes() == b'v2' and len(sg.list_backups(str(tmp_path / 'n.bin'))) == 1
+        # SAVEAS with the source path and overwrite=True (what the viewer's save_over does) is SAVE!: gated too
+        assert run(lambda: sg.save_as(doc, b'v3', str(src), {'modified': ['file']}, overwrite=True)) == 3 and src.read_bytes() == b'v0'
+        # SAVE! with overwrite disabled: 3, source intact
+        assert run(lambda: sg.save(doc, b'v3', {'modified': ['file']})) == 3 and src.read_bytes() == b'v0'
+        # undeclared change on a verified format is the editor's bug: 5 (RawAdapter: manifest without 'file' while bytes differ)
+        assert run(lambda: sg.save_as(doc, b'v4', str(tmp_path / 'o.bin'), {})) == 5 and not (tmp_path / 'o.bin').exists()
+    # gate closed with overwrite enabled: 3
+    c1 = sg.Config(allow_overwrite=True, require_gate=True)
+    with sg.open_doc(str(src), RawAdapter(), c1) as doc:
+        assert run(lambda: sg.save(doc, b'v5', {'modified': ['file']})) == 3 and src.read_bytes() == b'v0'
+    # gate not required: SAVE! ok, backup made, RESTORE brings v0 back (and backs up the current file first)
+    c2 = sg.Config(allow_overwrite=True, require_gate=False)
+    with sg.open_doc(str(src), RawAdapter(), c2) as doc:
+        assert run(lambda: sg.save(doc, b'v6', {'modified': ['file']})) == 0 and src.read_bytes() == b'v6'
+    n = len(sg.list_backups(str(src))); assert n == 1
+    sg.restore(str(src), 0); assert src.read_bytes() == b'v0' and len(sg.list_backups(str(src))) == 2
+    # external modification after load: conflict 4
+    with sg.open_doc(str(src), RawAdapter(), c2) as doc:
+        src.write_bytes(b'someone else')
+        assert run(lambda: sg.save(doc, b'v7', {'modified': ['file']})) == 4 and src.read_bytes() == b'someone else'
+    # RECOVER lists a session that was never closed
+    d = sg.open_doc(str(src), RawAdapter(), c2); d.journal.log('edit', op='move', handle=1)
+    assert any(len(ents) >= 1 for p, ents in sg.recover())

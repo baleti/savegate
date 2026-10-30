@@ -10,7 +10,7 @@ def _mk(**kw):
     d = tempfile.mkdtemp(**kw); _dirs.append(d); return d
 import savegate as sg, dwgdoc, dwgxform as X, wtest
 YEARS = {'2000': 'AC1015', '2004': 'AC1018', '2010': 'AC1024', '2013': 'AC1027', '2018': 'AC1032'}
-vers = [a for a in sys.argv[1:]] or ['2000', '2010', '2018']
+AUDIT = '--audit' in sys.argv; vers = [a for a in sys.argv[1:] if not a.startswith('--')] or ['2000', '2010', '2018']
 OPS = ('move', 'props', 'copy', 'erase')
 tot = collections.Counter(); fails = []
 cfg = sg.Config(allow_overwrite=True, require_gate=False, backup_keep=1)
@@ -39,7 +39,10 @@ for v in vers:
                 except (NotImplementedError, KeyError) as e:
                     tot['UNSUPPORTED'] += 1; print(v, ot, op, 'UNSUPPORTED', type(e).__name__); continue
                 try:
-                    sg.save_as(doc, out, os.path.join(work, 'o.dwg'), man, overwrite=True); tot['PASS'] += 1
+                    op_ = os.path.join(work, 'o.dwg'); sg.save_as(doc, out, op_, man, overwrite=True); tot['PASS'] += 1
+                    if AUDIT and (not os.environ.get('AUDIT_KINDS') or str(ot) in os.environ['AUDIT_KINDS'].split(',')):
+                        err = wtest.audit(op_, op_ + '.o'); tot['AUDIT_OK' if err is None else 'AUDIT_FAIL'] += 1
+                        print(v, ot, op, 'AUDIT_OK' if err is None else 'AUDIT_FAIL ' + str(err)[:150], flush=True)
                 except Exception as e:
                     tot['FAIL'] += 1; fails.append((v, ot, op, type(e).__name__, str(e)[:100])); print(v, ot, op, 'FAIL', type(e).__name__, str(e)[:100])
 print(dict(tot)); sys.exit(1 if tot['FAIL'] else 0)

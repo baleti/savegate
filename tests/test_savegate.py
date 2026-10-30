@@ -719,3 +719,20 @@ def test_rvt_damaged_source_not_overwritten(tmp_path):
     assert refused >= 8
     r = sg.save_as(sg.open_doc(str(p), None, cfg()), bytes(b), str(tmp_path / 'copy.rte'), {})
     assert r.ok and any('damaged' in w for w in r.report.get('warnings', []))
+
+
+VGS = os.path.expanduser('~/rvt-research/vg-scenes')
+
+
+@pytest.mark.skipif(not os.path.isdir(VGS), reason='vg scenes absent (local only)')
+@pytest.mark.parametrize('name', ['2024_vg_worksets.rvt', '2026_vg_worksets.rvt', '2024_vg_link_target.rvt'])
+def test_rvt_writer_noedit_is_stream_and_directory_identical(name, tmp_path):
+    """c3x-rvtgap: load + save with NO edit through the write-lab editor: every stream byte-identical and every directory entry (name, type, colour, tree links, CLSID, state, times) equal; only the container layout (sector order, free tail, FAT, header pointers) may differ"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    o = str(tmp_path / 'o.rvt'); wledit.Editor(os.path.join(VGS, name)).save(o)
+    A, B = cfb.CFB(open(os.path.join(VGS, name), 'rb').read()), cfb.CFB(open(o, 'rb').read())
+    sa, sb = A.streams(), B.streams()
+    assert sa.keys() == sb.keys() and all(sa[k].data == sb[k].data for k in sa)
+    meta = lambda c: [(e.name, e.type, e.color, e.left, e.right, e.child, bytes(e.clsid), e.state, bytes(e.ctime), bytes(e.mtime)) for e in c.entries if e.type]
+    assert meta(A) == meta(B)

@@ -1,7 +1,7 @@
 """Versioned backups next to the file (<dir>/.savegate/), falling back to the user cache dir."""
 import os, shutil, time, hashlib
 from .atomic import long_path, sha256_file, fsync_dir, full_fsync, write_temp, commit_temp
-from .errors import DiskError, SaveError
+from .errors import DiskError, SaveError, Conflict
 
 
 def _cache_dir():
@@ -32,7 +32,7 @@ def list_backups(path):
     return out
 
 
-def make_backup(path, keep=20, max_bytes=0):
+def make_backup(path, keep=20, max_bytes=0, expect_sha=None):
     """copy `path` into the backup store, verify by hash, return backup path. Raises DiskError when no store works."""
     src_hash = sha256_file(path)
     stamp = time.strftime('%Y%m%d-%H%M%S') + '-%03d' % (time.time() * 1000 % 1000)
@@ -48,6 +48,8 @@ def make_backup(path, keep=20, max_bytes=0):
                 os.remove(long_path(part)); raise OSError('backup hash mismatch')
             os.replace(long_path(part), long_path(dst)); fsync_dir(bd)
             _prune(path, keep, max_bytes)
+            if expect_sha and src_hash != expect_sha:     # the file changed after the last fingerprint check: keep its copy, refuse to replace it
+                raise Conflict('%s changed on disk while it was being saved; nothing was replaced (a copy of that version is kept as %s)' % (path, dst))
             return dst
         except OSError as e:
             last = e

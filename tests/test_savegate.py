@@ -665,3 +665,19 @@ def test_rust_port_vectors_are_current(tmp_path):
     subprocess.run([sys.executable, os.path.join(here, '..', 'tools', 'export_vectors.py'), str(tmp_path)], check=True, capture_output=True)
     for n in ('verify.json', 'errors.json', 'backup.json', 'sniff.json'):
         assert (tmp_path / n).read_bytes() == open(os.path.join(here, 'vectors', n), 'rb').read(), n
+
+
+def test_change_between_last_check_and_backup_is_refused(tmp_path, monkeypatch):
+    """c3x-e2e: the last fingerprint check runs BEFORE the backup copy; a same-size/same-mtime change landing in between used to be backed up and then overwritten (lost update)"""
+    from savegate import core
+    p = mk(tmp_path, b'original')
+    real = core.make_backup
+    def sneaky(path, *a, **k):
+        st = os.stat(path); open(path, 'wb').write(b'0riginal'); os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))   # other program: same size, same mtime
+        return real(path, *a, **k)
+    monkeypatch.setattr(core, 'make_backup', sneaky)
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc:
+        with pytest.raises(sg.Conflict) as ei: sg.save(doc, b'new content', {'modified': ['file']})
+    assert open(p, 'rb').read() == b'0riginal', 'the other program\'s change was overwritten'
+    assert 'not' in str(ei.value).lower() and not leftovers(tmp_path)
+    assert any(open(b[1], 'rb').read() == b'0riginal' for b in sg.list_backups(p))      # its content is kept as a backup

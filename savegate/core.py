@@ -175,7 +175,7 @@ def _save(doc, new_bytes, manifest, force, verify):
         tmp, rep = _produce(doc, new_bytes, manifest, doc.path, verify)
         try:
             if not force: check_unchanged(doc.path, doc.fingerprint, rehash=True)   # last check right before rename
-            tb = time.time(); backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes); rep.setdefault('timing', {})['backup'] = time.time() - tb
+            tb = time.time(); backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes, None if force else doc.fingerprint.sha256); rep.setdefault('timing', {})['backup'] = time.time() - tb
             if doc.journal: doc.journal.log('commit', backup=backup)
             tb = time.time(); atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly); rep['timing']['commit'] = time.time() - tb
         except BaseException:

@@ -176,6 +176,7 @@ def _save(doc, new_bytes, manifest, force, verify):
         dm = doc.adapter.source_damage(doc.buf)
         if dm: raise VerifyFailed('the file is damaged (%d problem(s), first: %s); overwrite refused, the file was not touched. Use SAVE AS to write a copy.' % (len(dm), dm[0]), dict(source_damage=dm[:20]))
     with Lock(doc.path):
+        atomic.sweep_own_temps(doc.path)       # orphans of a killed earlier save of this file
         if not force: check_unchanged(doc.path, doc.fingerprint)
         if doc.journal: doc.journal.log('save_begin', size=len(new_bytes))
         tmp, rep = _produce(doc, new_bytes, manifest, doc.path, verify)

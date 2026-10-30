@@ -528,10 +528,10 @@ def test_journal_replay_equals_edit_list_50_sessions(tmp_path):
 def test_orphan_temp_files_of_crashed_saves_are_cleaned(tmp_path):
     p = mk(tmp_path)
     old = tmp_path / '.a.bin.deadbeef.sgtmp'; old.write_bytes(b'partial'); t = time.time() - 7200; os.utime(old, (t, t))
-    fresh = tmp_path / '.a.bin.cafe.sgtmp'; fresh.write_bytes(b'inprogress')           # maybe another live save: kept
+    fresh = tmp_path / '.a.bin.cafe.sgtmp'; fresh.write_bytes(b'inprogress')           # cannot belong to a live save: that would hold the lock
     with sg.open_doc(p, RawAdapter(), cfg()) as doc:
         assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
-    assert not old.exists() and fresh.exists()      # open_doc sweeps temps older than 1 h (crash leftovers), keeps recent ones
+    assert not old.exists() and not fresh.exists()      # the save holds the target's lock, so every temp of this target is a crash leftover (was: only >1 h old ones; changed by c3x-e2e)
 
 
 @pytest.mark.parametrize('ver', ['AC1006', 'AC1009', 'AC1012', 'AC1014', 'AC1021', 'AC1035', 'AC1099'])
@@ -765,3 +765,10 @@ def test_rvt_oversized_partition_member_refused(tmp_path):
     ad = RvtAdapter()
     assert ad.validate(open(src, 'rb').read())
     with pytest.raises(sg.VerifyFailed, match='131088'): ad.validate(open(o, 'rb').read())
+
+
+def test_orphan_temp_of_a_killed_save_is_swept_by_the_next_save(tmp_path):
+    """c3x-e2e: a SIGKILLed SAVE! left a hidden full-size .sgtmp that lived until a save more than 1 h later"""
+    p = mk(tmp_path, b'original'); orphan = tmp_path / '.a.bin.abc123.sgtmp'; orphan.write_bytes(b'x' * 100); other = tmp_path / '.b.bin.abc123.sgtmp'; other.write_bytes(b'y')
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc: sg.save(doc, b'new content', {'modified': ['file']})
+    assert not orphan.exists() and other.exists()       # only this target's orphans

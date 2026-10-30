@@ -136,6 +136,18 @@ def sha256_file(path, bufsize=1 << 22):
     return h.hexdigest()
 
 
+def sweep_own_temps(dest):
+    """remove leftover temp files of THIS target (a killed save); call only while holding the target's lock, so no live save can own them"""
+    d, n = os.path.split(os.path.abspath(dest)); pre = '.' + n[:40] + '.'; k = 0
+    try:
+        for x in os.listdir(long_path(d)):
+            if x.startswith(pre) and x.endswith('.sgtmp'):
+                try: os.remove(os.path.join(d, x)); k += 1
+                except OSError: pass
+    except OSError: pass
+    return k
+
+
 def sweep_stale_temps(directory, max_age=3600):
     """remove leftover .*.sgtmp files older than max_age seconds (a crashed save)"""
     n = 0

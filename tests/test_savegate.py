@@ -777,21 +777,21 @@ def test_orphan_temp_of_a_killed_save_is_swept_by_the_next_save(tmp_path):
 @pytest.mark.skipif(not os.path.isdir(VGS), reason='vg scenes absent (local only)')
 @pytest.mark.parametrize('name', ['2024_vg_worksets.rvt', '2026_vg_worksets.rvt'])
 def test_rvt_edit_keeps_every_other_element_and_the_id_set(name, tmp_path):
-    """c3x-rvtgap: after an edit of one string, the element id set is unchanged and every OTHER element decodes to the same field log (neighbours in the same partition, unknown classes included, are not dropped or reinterpreted)"""
+    """c3x-rvtgap: after an edit of one string, the element id set is unchanged and every OTHER element decodes to the same field log (offsets excluded, later elements shift; neighbours in the same partition, unknown classes included, are not dropped or reinterpreted)"""
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
     src = os.path.join(VGS, name); ed = wledit.Editor(src)
     old = [l[4] for l in ed.trace(2)[3] if l[1] == 'ProjectPhase.m_name'][0]
     ids = sorted(ed.m.ids); before = {}
     for e in ids:
-        try: before[e] = repr(ed.trace(e)[3])
+        try: before[e] = repr([(l[0], l[1], l[4]) for l in ed.trace(e)[3]])
         except Exception: before[e] = 'ERR'
     ed.set_string(2, 'ProjectPhase.m_name', old + 'XYZ', match=old); o = str(tmp_path / 'o.rvt'); ed.save(o)
     ed2 = wledit.Editor(o)
     assert sorted(ed2.m.ids) == ids
     diff = []
     for e in ids:
-        try: a = repr(ed2.trace(e)[3])
+        try: a = repr([(l[0], l[1], l[4]) for l in ed2.trace(e)[3]])
         except Exception: a = 'ERR'
         if a != before[e]: diff.append(e)
     assert diff == [2]
@@ -848,3 +848,16 @@ def test_rvt_writer_noedit_identity_on_autodesk_sample_family_every_year(tmp_pat
         sa, sb = A.streams(), B.streams()
         assert sa.keys() == sb.keys() and all(sa[k].data == sb[k].data for k in sa), n
         assert meta(A) == meta(B), n
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_gate_refuses_a_corrupt_modified_stream_in_the_output(tmp_path):
+    """c5x-rvtgap (review R1): a stream declared modified is exempt from the hash diff; its page ECC / gzip CRC must still be checked on the WRITTEN bytes"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); import hashlib
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); c = cfb.CFB(raw); name = sorted(n for n in c.streams() if n.startswith('Partitions/'))[0]
+    st = c.streams()[name]; d = bytearray(st.data); d[100] ^= 0x55; st.data = bytes(d)
+    o = str(tmp_path / 'bad.rte'); cfb.write(c, o); bad = open(o, 'rb').read()
+    p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), bad, {'modified': ['stream:' + name]})
+    assert 'integrity' in str(ei.value) and hashlib.sha256(p.read_bytes()).hexdigest() == h

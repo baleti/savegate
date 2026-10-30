@@ -190,6 +190,9 @@ class RvtAdapter:
         return v
 
     def source_damage(self, buf):
+        d = self._damage(buf); self._src_dmg = set(d); return d
+
+    def _damage(self, buf):
         """problems in the SOURCE bytes the reader tolerates but the writer would carry over unchanged: bad page ECC, gzip CRC/size mismatch, bad inflate, unreadable container.
         Plain XML / raw gzip streams carry no page ECC. [] = nothing found. (c3x-rvtgap: a zeroed 64-byte run used to be saved back without any warning.)"""
         import struct, zlib, cfb, rvtw, ecc, wlpart
@@ -248,6 +251,8 @@ class RvtAdapter:
             if need not in s: raise VerifyFailed('stream %s missing in output' % need)
         if len(buf) != (c.nsectors + 1) * c.ss + (512 - c.ss if c.major == 3 else 0) and len(buf) % c.ss:
             raise VerifyFailed('container length is not sector aligned')
+        dmg = [d for d in self._damage(buf) if d not in getattr(self, '_src_dmg', ())]       # c5x-rvtgap: the written bytes get the same page ECC / gzip CRC+size check as the source (a modified stream is exempt from the hash diff); damage already present in the source (SAVE AS rescue copy) is not new
+        if dmg: raise VerifyFailed('output fails the integrity check: %s' % '; '.join(dmg[:3]))
         try:
             import rvtw, wlpart
             for n, e in s.items():

@@ -76,7 +76,7 @@ class DwgAdapter:
         """Fast path for verify: objects whose raw bytes are identical in source and output cannot differ when decoded
         (any cross-object change shows in the raw bytes of the object that changed), so only the others are decoded."""
         import dwgmodel as M
-        ms, mo = M.Model(src), M.Model(out)
+        ms, mo = M.Model(src), M.Model(out); self._pair = (ms, mo)
         same = {h for h, o in ms.objs.items() if h in mo.objs and mo.objs[h].raw == o.raw and mo.objs[h].type == o.type}
         saved = (dict(M.ENT_DECODERS), dict(M.CLASS_DECODERS), M._proxy_entity)
         def guard(f):
@@ -110,6 +110,23 @@ class DwgAdapter:
         for k in manifest.get('deleted', ()):
             dele |= {k} if isinstance(k, str) else {'ent:%x' % k, 'obj:%x' % k}
         return mod, add, dele
+
+
+    def extra_checks(self, manifest):
+        """Structural objects tolerated as side effects (block records, BLOCK/ENDBLK, tables) must keep their identity: a changed
+        BLOCK/ENDBLK object is never a legitimate side effect (they are only added/removed with a dimension), and a changed BLOCK_HEADER
+        must keep its decoded name (bit flip in a block name renames the block under its INSERTs; found by c8-perf gatepower 2026-10-30)."""
+        pair = getattr(self, '_pair', None)
+        if not pair: return
+        ms, mo = pair; bad = []
+        for h, o in ms.objs.items():
+            p = mo.objs.get(h)
+            if p is None or p.raw == o.raw: continue
+            if o.type in (4, 5): bad.append(('struct_changed', 'obj:%x' % h))
+            elif o.type == 49 and ms.blocks.get(h) != mo.blocks.get(h): bad.append(('block_renamed', 'obj:%x' % h))
+        for h, n in ms.blocks.items():
+            if h in mo.blocks and mo.blocks[h] != n and ('block_renamed', 'obj:%x' % h) not in bad: bad.append(('block_renamed', 'obj:%x' % h))
+        return bad
 
     # structural objects/header vars that legitimately change with add/delete/edit
     def side_effects(self, manifest):

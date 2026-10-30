@@ -74,6 +74,7 @@ def _verify(doc, new_bytes, manifest):
             if k not in dele: bad.append(('lost', k))
         else:
             if k not in add: bad.append(('unexpected', k))
+    if hasattr(ad, 'extra_checks'): bad += ad.extra_checks(manifest) or []
     missing = [('not_modified', k) for k in allowed_mod if k in a and k in b and a[k] == b[k]]  # informational
     rep = dict(objects_src=len(a), objects_out=len(b), unexpected=bad[:50], n_unexpected=len(bad), declared_noop=missing[:50])
     if bad:

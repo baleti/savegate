@@ -965,3 +965,18 @@ def test_rvt_declared_edit_plus_far_bit_flip_in_the_same_partition_is_refused(tm
     p.write_bytes(raw)
     with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), bad, {'modified': decl})
     assert 'members_changed' in str(ei.value) or 'members' in str(ei.value)
+
+
+@pytest.mark.skipif(not os.path.exists(os.path.join(VGS, '2026_vg_worksets.rvt')), reason='vg scenes absent (local only)')
+def test_rvt_workshared_model_is_not_overwritten_in_place(tmp_path):
+    """c5x-rvtgap: Worksharing: Central/Local files are tied to central/local sync state outside the file; in-place overwrite refused (file untouched), SAVE AS still works; a non-workshared scene overwrites normally"""
+    import hashlib
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb')
+    raw = open(os.path.join(VGS, '2026_vg_worksets.rvt'), 'rb').read(); p = tmp_path / 'w.rvt'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), raw, {})
+    assert 'workshared' in str(ei.value) and hashlib.sha256(p.read_bytes()).hexdigest() == h
+    assert sg.save_as(sg.open_doc(str(p), None, cfg()), raw, str(tmp_path / 'copy.rvt'), {}).ok
+    if os.path.isdir(ROS):
+        q = tmp_path / 'n.rte'; r2 = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); q.write_bytes(r2)
+        assert sg.save(sg.open_doc(str(q), None, cfg()), r2, {}).ok

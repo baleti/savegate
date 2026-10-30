@@ -192,6 +192,18 @@ class RvtAdapter:
     def source_damage(self, buf):
         d = self._damage(buf); self._src_dmg = set(d); return d
 
+    def overwrite_risks(self, buf):
+        """c5x-rvtgap: reasons NOT to replace this file in place although the bytes are fine. A workshared model (Worksharing: Central/Local in BasicFileInfo) is tied to its
+        central/local pair, workset ownership and sync history that live outside this file; rewriting it behind Revit's back can break the sync. SAVE AS stays allowed."""
+        import cfb
+        try: d = cfb.CFB(bytes(buf)).streams()['BasicFileInfo'].data
+        except Exception: return []
+        k = d.find('Worksharing:'.encode('utf-16le'))
+        if k < 0: return []
+        m = d[k + 24:k + 80].decode('utf-16le', 'ignore').strip().split('\r')[0].split('\n')[0].strip()
+        if m and not m.lower().startswith('not enabled'): return ['workshared model (Worksharing: %s): in-place overwrite refused, use SAVE AS or save from Revit' % m]
+        return []
+
     def _damage(self, buf):
         """problems in the SOURCE bytes the reader tolerates but the writer would carry over unchanged: bad page ECC, gzip CRC/size mismatch, bad inflate, unreadable container.
         Plain XML / raw gzip streams carry no page ECC. [] = nothing found. (c3x-rvtgap: a zeroed 64-byte run used to be saved back without any warning.)"""

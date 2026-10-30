@@ -752,3 +752,16 @@ def test_rvt_string_edit_touches_only_the_holding_partition(name, grow, tmp_path
     A, B = cfb.CFB(open(src, 'rb').read()).streams(), cfb.CFB(open(o, 'rb').read()).streams()
     ch = [k for k in A if A[k].data != B[k].data]
     assert len(ch) == 1 and ch[0].startswith('Partitions/') and len(A[ch[0]].data) == len(B[ch[0]].data)
+
+
+@pytest.mark.skipif(not os.path.isdir(VGS), reason='vg scenes absent (local only)')
+def test_rvt_oversized_partition_member_refused(tmp_path):
+    """c3x-rvtgap: the writer accepts a 200k-character string and emits a 395 KB partition member; Revit's limit is 131088 and validate() said ok"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(VGS, '2024_vg_worksets.rvt'); ed = wledit.Editor(src)
+    old = [l[4] for l in ed.trace(2)[3] if l[1] == 'ProjectPhase.m_name'][0]
+    ed.set_string(2, 'ProjectPhase.m_name', 'Z' * 200000, match=old); o = str(tmp_path / 'o.rvt'); ed.save(o)
+    ad = RvtAdapter()
+    assert ad.validate(open(src, 'rb').read())
+    with pytest.raises(sg.VerifyFailed, match='131088'): ad.validate(open(o, 'rb').read())

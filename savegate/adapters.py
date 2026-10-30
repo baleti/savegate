@@ -248,6 +248,17 @@ class RvtAdapter:
             if need not in s: raise VerifyFailed('stream %s missing in output' % need)
         if len(buf) != (c.nsectors + 1) * c.ss + (512 - c.ss if c.major == 3 else 0) and len(buf) % c.ss:
             raise VerifyFailed('container length is not sector aligned')
+        try:
+            import rvtw, wlpart
+            for n, e in s.items():
+                if not n.startswith('Partitions/'): continue
+                st = rvtw.Stream(e.data)
+                if len(st.payload) < 40: continue
+                for k, m in enumerate(wlpart.Partition(st).mem):
+                    if len(m['raw']) > 131088:       # every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
+                        raise VerifyFailed('%s member %d holds %d bytes, above the 131088 Revit limit' % (n, k, len(m['raw'])))
+        except VerifyFailed: raise
+        except Exception as ex: raise VerifyFailed('partition framing of the output could not be checked: %s %s' % (type(ex).__name__, ex))
         return 'ok %d streams' % len(s)
 
 

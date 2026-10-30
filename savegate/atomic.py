@@ -90,12 +90,27 @@ def is_readonly(path):
     return stat.S_IMODE(st.st_mode) & 0o222 == 0
 
 
+def _copy_owner_xattrs(src, tmp):
+    """a rename-replace makes a new inode: keep the group (shared project folders) and the extended attributes (labels, tags, security context) of the file it replaces. Best effort, POSIX only; the owner cannot be kept without root"""
+    if _WIN: return
+    try:
+        gid = os.stat(src).st_gid
+        if gid != os.stat(tmp).st_gid: os.chown(tmp, -1, gid)
+    except (OSError, AttributeError): pass
+    try:
+        for k in os.listxattr(src):
+            try: os.setxattr(tmp, k, os.getxattr(src, k))
+            except OSError: pass
+    except (OSError, AttributeError): pass
+
+
 def commit_temp(tmp, dest, copy_mode_from=None, keep_readonly=False):
     """rename tmp over dest (atomic), then fsync the directory"""
     if copy_mode_from and os.path.exists(long_path(copy_mode_from)):
         mode = stat.S_IMODE(os.stat(long_path(copy_mode_from)).st_mode)
         try: os.chmod(tmp, mode if keep_readonly else mode | stat.S_IWRITE)
         except OSError: pass
+        _copy_owner_xattrs(long_path(copy_mode_from), tmp)
     ro = keep_readonly and os.path.exists(long_path(dest)) and is_readonly(dest)
     if ro and _WIN:
         os.chmod(long_path(dest), stat.S_IWRITE)      # Windows cannot replace a READONLY file

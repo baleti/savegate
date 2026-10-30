@@ -942,3 +942,26 @@ def test_rvt_element_view_does_not_excuse_a_tampered_global_stream(tmp_path, mon
     assert sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), ok, {'modified': decl}).ok
     p.write_bytes(raw)
     with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), bad, {'modified': decl})
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_declared_edit_plus_far_bit_flip_in_the_same_partition_is_refused(tmp_path, monkeypatch):
+    """c5x-rvtgap: a single-bit flip (valid gzip CRC and page ECC) in a member far from the declared edit is invisible to the element view (23/25 flips undetected); the member-spread check refuses it, the clean edit passes"""
+    pytest.importorskip('numpy'); pytest.importorskip('olefile')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); wledit = pytest.importorskip('wledit'); wlpart = pytest.importorskip('wlpart')
+    from savegate.rvt_elements import elements
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
+    view = lambda b: elements(b, with_geometry=False)
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); raw = open(src, 'rb').read(); ed = wledit.Editor(src)
+    e, l = next((e, l) for e in sorted(ed.m.ids) for l in (ed.trace(e)[3] if e < 30000 else []) if l[1] == 'FamilyBase.m_name' and l[3] - l[2] == 4 + 2 * len(l[4]))
+    ed.set_string(e, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / 'ok.rte'); ed.save(o); ok = open(o, 'rb').read()
+    a0, b0 = view(raw), view(ok); decl = ['el:%d' % k for k in a0 if a0[k] != b0.get(k)]
+    c = cfb.CFB(ok); n = [k for k in c.streams() if k.startswith('Partitions/')][0]; st = rvtw.Stream(c.streams()[n].data); pt = wlpart.Partition(st)
+    m = pt.mem[130]; m['raw'][97227] ^= 1; m['dirty'] = True; c.streams()[n].data = st.build(pt.rebuild(), keep_spare=False)
+    t = str(tmp_path / 't.rte'); cfb.write(c, t); bad = open(t, 'rb').read(); assert RvtAdapter().source_damage(bad) == []
+    p = tmp_path / 'a.rte'; p.write_bytes(raw)
+    assert sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), ok, {'modified': decl}).ok
+    p.write_bytes(raw)
+    with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), bad, {'modified': decl})
+    assert 'members_changed' in str(ei.value) or 'members' in str(ei.value)

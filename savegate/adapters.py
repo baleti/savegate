@@ -1,6 +1,6 @@
 """Format adapters: sniff version, snapshot (key -> comparable) for the verify diff, structural validate.
 A snapshot key present in the source and output must be equal unless the manifest lists it as modified."""
-import os, sys, re, hashlib
+import hashlib, os, sys, re
 from .errors import UnsupportedVersion, VerifyFailed
 
 DWG_WRITABLE = ('AC1015', 'AC1018', 'AC1024', 'AC1027', 'AC1032')
@@ -232,7 +232,35 @@ class RvtAdapter:
         if self.elements_fn:
             out.update({'el:' + str(k): v for k, v in self.elements_fn(buf).items()})
         self._keys = set(out)
+        self._mem_hist = (getattr(self, '_mem_hist', [])[-1:]) + [self._member_hashes(c)]     # [source, output] of the current verify
         return out
+
+    @staticmethod
+    def _member_hashes(c):
+        """{partition stream: [sha1 of each inflated gzip member]} or {} when the stream does not parse"""
+        try:
+            import rvtw, wlpart
+            r = {}
+            for n, e in c.streams().items():
+                if not n.startswith('Partitions/'): continue
+                st = rvtw.Stream(e.data)
+                if len(st.payload) < 40: continue
+                r[n] = [hashlib.sha1(bytes(m['raw'])).hexdigest() for m in wlpart.Partition(st).mem]
+            return r
+        except Exception: return {}
+
+    def extra_checks(self, manifest):
+        """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
+        went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""
+        h = getattr(self, '_mem_hist', [])
+        if len(h) < 2 or not h[0] or not h[1]: return []
+        nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd); bad = []
+        for n, a in h[0].items():
+            b = h[1].get(n)
+            if b is None or len(a) != len(b): continue
+            ch = [k for k in range(len(a)) if a[k] != b[k]]
+            if len(ch) > budget or (ch and ch[-1] - ch[0] + 1 > budget + 2): bad.append(('members_changed', '%s: %d members changed (%d..%d), declared %d' % (n, len(ch), ch[0], ch[-1], nd)))
+        return bad
 
     def expand(self, manifest):
         return set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ()))

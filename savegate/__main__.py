@@ -10,7 +10,10 @@ def main(a):
     if c == 'info':
         d = sg.open_doc(a[1], journal=False); print(json.dumps(dict(format=d.adapter.name, version=d.version, size=d.fingerprint.size, sha256=d.fingerprint.sha256))); return 0
     if c == 'backups':
-        for i, (n, p, s) in enumerate(sg.list_backups(a[1])): print(i, s, p)
+        from savegate.backup import verify_backup
+        import time
+        for i, (n, p, s) in enumerate(sg.list_backups(a[1])):
+            print(i, s, time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.stat(p).st_mtime)), 'ok' if verify_backup(p) else 'DAMAGED', p)
         return 0
     if c == 'restore':
         print(sg.restore(a[1], int(a[2]) if len(a) > 2 else None)); return 0

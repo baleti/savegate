@@ -565,3 +565,22 @@ def test_rvt_other_years_refused_with_clear_message(year, tmp_path):
         pick_adapter(out.read_bytes())
     m = str(ei.value)
     assert year in m and '2024' in m and '2026' in m and 'not touched' in m
+
+
+def test_backup_size_cap_and_damaged_backup_not_restored(tmp_path, monkeypatch):
+    from savegate import backup as B
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
+    p = tmp_path / 'a.bin'
+    for i in range(6):
+        p.write_bytes(bytes([i]) * 1000); B.make_backup(str(p), keep=20, max_bytes=2500)
+    bl = B.list_backups(str(p))
+    assert 1 <= len(bl) <= 2 and sum(b[2] for b in bl) <= 2500          # cap: newest kept, oldest dropped
+    assert open(bl[0][1], 'rb').read() == bytes([5]) * 1000
+    assert B.verify_backup(bl[0][1])
+    with open(bl[0][1], 'r+b') as f: f.seek(10); f.write(b'X')           # bit rot in the newest backup
+    assert not B.verify_backup(bl[0][1])
+    p.write_bytes(b'current')
+    with pytest.raises(sg.SaveError, match='damaged'):
+        B.restore(str(p))
+    assert p.read_bytes() == b'current'                                  # target untouched
+    assert B.restore(str(p), 1) if len(bl) > 1 else True

@@ -15,6 +15,7 @@ class Config:
     allow_overwrite: bool = False     # SAVE! gate 1 (user config)
     require_gate: bool = True         # SAVE! gate 2 (oracle matrix green for this format/version)
     backup_keep: int = 20
+    backup_max_bytes: int = 0         # 0 = unlimited; else drop the oldest backups beyond this total (the newest is always kept)
     gate_file: str = None             # default: <cache>/gate.json or $SAVEGATE_GATE
     journal_dir: str = None
     verify: bool = True
@@ -133,7 +134,7 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
     backup = None
     try:
         if os.path.exists(long_path(dest)):
-            backup = make_backup(dest, doc.cfg.backup_keep)
+            backup = make_backup(dest, doc.cfg.backup_keep, doc.cfg.backup_max_bytes)
             atomic.commit_temp(tmp, dest)
         else:
             atomic.link_new(tmp, dest)
@@ -171,7 +172,7 @@ def _save(doc, new_bytes, manifest, force, verify):
         tmp, rep = _produce(doc, new_bytes, manifest, doc.path, verify)
         try:
             if not force: check_unchanged(doc.path, doc.fingerprint, rehash=True)   # last check right before rename
-            backup = make_backup(doc.path, cfg.backup_keep)
+            backup = make_backup(doc.path, cfg.backup_keep, cfg.backup_max_bytes)
             if doc.journal: doc.journal.log('commit', backup=backup)
             atomic.commit_temp(tmp, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly)
         except BaseException:

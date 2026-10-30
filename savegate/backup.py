@@ -32,7 +32,7 @@ def list_backups(path):
     return out
 
 
-def make_backup(path, keep=20):
+def make_backup(path, keep=20, max_bytes=0):
     """copy `path` into the backup store, verify by hash, return backup path. Raises DiskError when no store works."""
     src_hash = sha256_file(path)
     stamp = time.strftime('%Y%m%d-%H%M%S') + '-%03d' % (time.time() * 1000 % 1000)
@@ -47,7 +47,7 @@ def make_backup(path, keep=20):
             if sha256_file(part) != src_hash:
                 os.remove(long_path(part)); raise OSError('backup hash mismatch')
             os.replace(long_path(part), long_path(dst)); fsync_dir(bd)
-            _prune(path, keep)
+            _prune(path, keep, max_bytes)
             return dst
         except OSError as e:
             last = e
@@ -56,10 +56,24 @@ def make_backup(path, keep=20):
     raise DiskError('cannot write a backup of %s: %s' % (path, last))
 
 
-def _prune(path, keep):
-    for name, p, _ in list_backups(path)[keep:]:
+def _prune(path, keep, max_bytes=0):
+    """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
+    bl = list_backups(path)
+    drop = bl[keep:]
+    if max_bytes:
+        tot = 0
+        for i, (name, p, sz) in enumerate(bl[:keep]):
+            tot += sz
+            if tot > max_bytes and i > 0: drop += bl[i:keep]; break
+    for name, p, _ in drop:
         try: os.remove(p)
         except OSError: pass
+
+
+def verify_backup(p):
+    """True when the backup's SHA-256 starts with the 8 hex digits recorded in its file name (written at backup time)."""
+    tag = os.path.basename(p).rsplit('-', 1)[-1]
+    return len(tag) == 8 and sha256_file(p).startswith(tag)
 
 
 def restore(path, which=None):
@@ -70,6 +84,7 @@ def restore(path, which=None):
     which = which or 0
     if which >= len(bl): raise SaveError('backup %d does not exist (%d available)' % (which, len(bl)))
     use = bl[which][1]
+    if not verify_backup(use): raise SaveError('backup %s is damaged (hash differs from its recorded hash); not restored, %s untouched' % (use, path))
     if os.path.exists(long_path(path)):
         make_backup(path)
     with open(long_path(use), 'rb') as f: data = f.read()

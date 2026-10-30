@@ -656,3 +656,12 @@ def test_block_record_dropping_out_of_the_listing_is_refused():
     assert ('block_unlisted', 'obj:70') in a.extra_checks({})
     assert ('block_unlisted', 'obj:70') not in a.extra_checks({'deleted': [0x70]})        # declared deletion of that record is fine
     a._pair = (src, M({0x1f: '*Model_Space', 0x70: 'DOOR'})); assert a.extra_checks({}) == []
+
+
+def test_rust_port_vectors_are_current(tmp_path):
+    """tests/vectors/*.json (consumed by the Rust port) must equal what the Python reference produces now."""
+    import subprocess, sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    subprocess.run([sys.executable, os.path.join(here, '..', 'tools', 'export_vectors.py'), str(tmp_path)], check=True, capture_output=True)
+    for n in ('verify.json', 'errors.json', 'backup.json', 'sniff.json'):
+        assert (tmp_path / n).read_bytes() == open(os.path.join(here, 'vectors', n), 'rb').read(), n

@@ -8,7 +8,7 @@ d0 = dwgdoc.Doc(open(os.path.expanduser('~/dwg-write/templates/blank_%s.dwg' % v
 for f in (wtest.basic, wtest.blocks, wtest.more, wtest.dims):
     try: f(d0)
     except Exception: pass
-src = d0.save(); rng = random.Random(7); w = tempfile.mkdtemp(prefix='sgb'); os.environ['SAVEGATE_JOURNAL'] = w + '/j'
+src = d0.save(); rng = random.Random(7); w = _mk(prefix='sgb', dir=os.environ.get('SG_TOOL_TMP')); os.environ['SAVEGATE_JOURNAL'] = w + '/j'
 p = os.path.join(w, 'f.dwg'); open(p, 'wb').write(src); cfg = sg.Config(allow_overwrite=True, require_gate=False, backup_keep=1)
 C = {'refused': 0, 'harmless': 0, 'ESCAPE': 0}
 import dwgxform as X

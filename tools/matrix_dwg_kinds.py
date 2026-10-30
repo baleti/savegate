@@ -3,7 +3,11 @@
 NotImplementedError/KeyError) / FAIL (VerifyFailed or other). usage: matrix_dwg_kinds.py [versions...]  (default 2000 2010 2018)"""
 import os, sys, collections
 sys.path[:0] = [os.path.join(os.path.dirname(__file__), '..'), os.path.expanduser('~/dwg-write')]
-import tempfile
+import tempfile, atexit, shutil
+_dirs = []
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _dirs])
+def _mk(**kw):
+    d = tempfile.mkdtemp(**kw); _dirs.append(d); return d
 import savegate as sg, dwgdoc, dwgxform as X, wtest
 YEARS = {'2000': 'AC1015', '2004': 'AC1018', '2010': 'AC1024', '2013': 'AC1027', '2018': 'AC1032'}
 vers = [a for a in sys.argv[1:]] or ['2000', '2010', '2018']
@@ -16,7 +20,7 @@ for v in vers:
     for f in (wtest.basic, wtest.blocks, wtest.more, wtest.dims):
         try: f(d)
         except Exception as e: print('build', f.__name__, type(e).__name__, str(e)[:60])
-    work = tempfile.mkdtemp(prefix='sgk'); src = os.path.join(work, 'src.dwg'); open(src, 'wb').write(d.save())
+    work = _mk(prefix='sgk', dir=os.environ.get('SG_TOOL_TMP')); src = os.path.join(work, 'src.dwg'); open(src, 'wb').write(d.save())
     os.environ['SAVEGATE_JOURNAL'] = work + '/j'
     kinds = {}
     for h in dwgdoc.Doc(open(src, 'rb').read()).entities('*Model_Space'): kinds.setdefault(dwgdoc.Doc(open(src, 'rb').read()).otype(h), h) if False else None

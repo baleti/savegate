@@ -16,7 +16,7 @@ for v in vers:
         except Exception: pass
     seedbuf = d0.save()
     for seed in range(seeds):
-        rng = random.Random(seed * 1009 + int(v)); w = tempfile.mkdtemp(prefix='sgf'); os.environ['SAVEGATE_JOURNAL'] = w + '/j'
+        rng = random.Random(seed * 1009 + int(v)); w = _mk(prefix='sgf', dir=os.environ.get('SG_TOOL_TMP')); os.environ['SAVEGATE_JOURNAL'] = w + '/j'
         p = os.path.join(w, 'f.dwg'); open(p, 'wb').write(seedbuf)
         with sg.open_doc(p, None, cfg) as doc:
             for i in range(steps):

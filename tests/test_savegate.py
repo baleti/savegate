@@ -736,3 +736,19 @@ def test_rvt_writer_noedit_is_stream_and_directory_identical(name, tmp_path):
     assert sa.keys() == sb.keys() and all(sa[k].data == sb[k].data for k in sa)
     meta = lambda c: [(e.name, e.type, e.color, e.left, e.right, e.child, bytes(e.clsid), e.state, bytes(e.ctime), bytes(e.mtime)) for e in c.entries if e.type]
     assert meta(A) == meta(B)
+
+
+@pytest.mark.skipif(not os.path.isdir(VGS), reason='vg scenes absent (local only)')
+@pytest.mark.parametrize('name', ['2024_vg_worksets.rvt', '2026_vg_worksets.rvt'])
+@pytest.mark.parametrize('grow', [1, 30])
+def test_rvt_string_edit_touches_only_the_holding_partition(name, grow, tmp_path):
+    """c3x-rvtgap: a size-changing string edit rewrites exactly one Partitions/N stream, with the SAME stored length (page layout kept); every other stream, ElemTable included, stays byte-identical"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(VGS, name); ed = wledit.Editor(src)
+    eid, fn, old = 2, 'ProjectPhase.m_name', None
+    old = [l[4] for l in ed.trace(eid)[3] if l[1] == fn][0]
+    ed.set_string(eid, fn, 'Z' * (len(old) + grow), match=old); o = str(tmp_path / 'o.rvt'); ed.save(o)
+    A, B = cfb.CFB(open(src, 'rb').read()).streams(), cfb.CFB(open(o, 'rb').read()).streams()
+    ch = [k for k in A if A[k].data != B[k].data]
+    assert len(ch) == 1 and ch[0].startswith('Partitions/') and len(A[ch[0]].data) == len(B[ch[0]].data)

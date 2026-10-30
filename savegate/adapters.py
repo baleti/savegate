@@ -20,11 +20,19 @@ class RawAdapter:
         return 'ok'
 
 
+def _plain(v):
+    """repr with the model's duplicate-name suffix '~<handle>' removed (two anonymous '*D' blocks are told apart by the model only while both exist)."""
+    return re.sub(r"(\*[A-Za-z]+)~[0-9a-f]+", r"\1", repr(v) if not isinstance(v, str) else v)
+
+
+_SUBENT = {2, 6, 10, 11, 12, 13, 14, 15}   # ATTRIB, SEQEND, VERTEX kinds
+
+
 class DwgAdapter:
     name = 'dwg'
     def __init__(self, lib=None):
         lib = lib or os.environ.get('SAVEGATE_DWG_LIB') or os.path.expanduser('~/dwg-write')
-        self.owners = {}
+        self.owners = {}; self.bheaders = {}
         if lib not in sys.path: sys.path.insert(0, lib)
 
     def sniff(self, buf):
@@ -38,11 +46,22 @@ class DwgAdapter:
         out = {}
         ent_handles = set()
         for blk, e in m.entities():
-            out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, repr(v)) for k, v in e.items())) + '|' + blk).encode(), digest_size=12).digest()
+            out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, _plain(v)) for k, v in e.items())) + '|' + _plain(blk)).encode(), digest_size=12).digest()
             ent_handles.add(e['handle']); self.owners[e['handle']] = e.get('owner')
+            if str(e.get('kind', '')).startswith(('INSERT', 'MINSERT')) and isinstance(e.get('block_handle'), int): self.bheaders[e['handle']] = e['block_handle']
+        dimblk = {e['block_ref']: e['handle'] for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if hasattr(m, 'entities') else {}
+        self.dims = getattr(self, 'dims', set()) | set(dimblk.values())
+        if dimblk:   # geometry of a dimension's anonymous block belongs to the dimension
+            for blk, e in m.entities():
+                if blk in dimblk and e['handle'] != dimblk[blk]: self.owners[e['handle']] = dimblk[blk]
         for h, o in m.objs.items():
             if h not in ent_handles:
                 out['obj:%x' % h] = _h(o.raw)
+                if o.type in _SUBENT and h not in self.owners:   # vertex / SEQEND / ATTRIB not emitted as entities (fast path skips): still owned by their parent
+                    try:
+                        par = [v for c, v in __import__('dwgmodel').owner_and_layer(o) if c == 4]
+                        if par: self.owners[h] = par[0]
+                    except Exception: pass
         for k, v in m.header().items():
             out['hdr:%s' % k] = repr(v)
         out['meta:version'] = m.version
@@ -97,6 +116,8 @@ class DwgAdapter:
         for k in list(manifest.get('added', ())) + list(manifest.get('deleted', ())):
             if isinstance(k, int):
                 se.add('hdr:HANDSEED')
+                if k in self.bheaders: se.add('obj:%x' % self.bheaders[k])   # INSERT: the block record keeps the list of its inserts
+                if k in getattr(self, 'dims', ()): se |= {'obj:1'}   # adding/removing a dimension adds/removes its anonymous block: BLOCK_CONTROL object list
                 if self.owners.get(k) is not None: se.add('obj:%x' % self.owners[k])
         return se
 

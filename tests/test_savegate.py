@@ -721,6 +721,21 @@ def test_rvt_damaged_source_not_overwritten(tmp_path):
     assert r.ok and any('damaged' in w for w in r.report.get('warnings', []))
 
 
+TRUNC_RTE = os.path.expanduser('~/rvt-research/rosetta/2024_all_types_base.rte')
+
+
+@pytest.mark.skipif(not os.path.exists(TRUNC_RTE), reason='rosetta scene absent (local only)')
+def test_rvt_truncated_source_is_never_accepted(tmp_path):
+    """c5x-rvtgap: olefile-style readers parse a truncated .rvt silently with short streams; the gate must not treat it as healthy (any cut length)"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb')
+    raw = open(TRUNC_RTE, 'rb').read()
+    ad = sg.RvtAdapter() if hasattr(sg, 'RvtAdapter') else __import__('savegate.adapters', fromlist=['x']).RvtAdapter()
+    assert ad._damage(raw) == []
+    for fr in (0.999, 0.99, 0.9, 0.5, 0.1):
+        assert ad._damage(raw[:int(len(raw) * fr)]), fr
+
+
 VGS = os.path.expanduser('~/rvt-research/vg-scenes')
 
 

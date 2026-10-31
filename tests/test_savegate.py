@@ -860,7 +860,7 @@ def test_rvt_gate_refuses_a_corrupt_modified_stream_in_the_output(tmp_path):
     o = str(tmp_path / 'bad.rte'); cfb.write(c, o); bad = open(o, 'rb').read()
     p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
     with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), bad, {'modified': ['stream:' + name]})
-    assert 'integrity' in str(ei.value) and hashlib.sha256(p.read_bytes()).hexdigest() == h
+    assert ('integrity' in str(ei.value) or 'span_changed' in str(ei.value)) and hashlib.sha256(p.read_bytes()).hexdigest() == h
 
 
 @pytest.mark.skipif(not os.path.isdir(RFA), reason='Autodesk sample rfa absent')
@@ -964,7 +964,33 @@ def test_rvt_declared_edit_plus_far_bit_flip_in_the_same_partition_is_refused(tm
     assert sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), ok, {'modified': decl}).ok
     p.write_bytes(raw)
     with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), RvtAdapter(elements_fn=view), cfg()), bad, {'modified': decl})
-    assert 'members_changed' in str(ei.value) or 'members' in str(ei.value)
+    assert 'members_changed' in str(ei.value) or 'span_changed' in str(ei.value)
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_declared_edit_plus_bit_flip_in_the_edited_member_is_refused(tmp_path, monkeypatch):
+    """c5x-rvtgap: a flip inside the SAME gzip member as the declared edit but 60 KB away passes the member-spread check; the changed-window check (a declared string edit changes <= ~1 KB of a partition on real scenes) flags it"""
+    pytest.importorskip('numpy'); pytest.importorskip('olefile')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); wledit = pytest.importorskip('wledit'); wlpart = pytest.importorskip('wlpart')
+    from savegate.rvt_elements import elements
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
+    view = lambda b: elements(b, with_geometry=False)
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); raw = open(src, 'rb').read(); ed = wledit.Editor(src)
+    e, l = next((e, l) for e in sorted(ed.m.ids) for l in (ed.trace(e)[3] if e < 30000 else []) if l[1] == 'FamilyBase.m_name' and l[3] - l[2] == 4 + 2 * len(l[4]))
+    ed.set_string(e, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / 'ok.rte'); ed.save(o); ok = open(o, 'rb').read()
+    a0, b0 = view(raw), view(ok); decl = ['el:%d' % k for k in a0 if a0[k] != b0.get(k)]
+    c = cfb.CFB(ok); n = [k for k in c.streams() if k.startswith('Partitions/')][0]; st = rvtw.Stream(c.streams()[n].data); pt = wlpart.Partition(st)
+    A = [bytes(m['raw']) for m in wlpart.Partition(rvtw.Stream(cfb.CFB(raw).streams()[n].data)).mem]
+    k = next(i for i, m in enumerate(pt.mem) if bytes(m['raw']) != A[i]); m = pt.mem[k]
+    d = next(i for i in range(len(m['raw'])) if m['raw'][i] != A[k][i]); far = d + 60000 if d + 60000 < len(m['raw']) else d - 60000
+    m['raw'][far] ^= 1; m['dirty'] = True; c.streams()[n].data = st.build(pt.rebuild(), keep_spare=False)
+    t = str(tmp_path / 't.rte'); cfb.write(c, t); bad = open(t, 'rb').read(); assert RvtAdapter().source_damage(bad) == []
+    def spans(out):      # the changed-window rule alone (the element view already catches most flips in this dense member)
+        a = RvtAdapter(); a._blk_hist = [a._block_hashes(cfb.CFB(raw)), a._block_hashes(cfb.CFB(out))]
+        return a.span_checks({'modified': decl})
+    assert spans(ok) == [], 'a real string edit must stay inside the window budget'
+    r = spans(bad); assert r and r[0][0] == 'span_changed', r
 
 
 @pytest.mark.skipif(not os.path.exists(os.path.join(VGS, '2026_vg_worksets.rvt')), reason='vg scenes absent (local only)')

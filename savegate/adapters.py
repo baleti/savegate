@@ -245,6 +245,7 @@ class RvtAdapter:
             out.update({'el:' + str(k): v for k, v in self.elements_fn(buf).items()})
         self._keys = set(out)
         self._mem_hist = (getattr(self, '_mem_hist', [])[-1:]) + [self._member_hashes(c)]     # [source, output] of the current verify
+        self._blk_hist = (getattr(self, '_blk_hist', [])[-1:]) + [self._block_hashes(c)]
         return out
 
     @staticmethod
@@ -261,12 +262,49 @@ class RvtAdapter:
             return r
         except Exception: return {}
 
+    BLK = 1024
+
+    @classmethod
+    def _block_hashes(cls, c):
+        """{partition stream: (hashes of 1 KB blocks of the inflated members from the start, same from the end, total length)}"""
+        try:
+            import rvtw, wlpart
+            r = {}
+            for n, e in c.streams().items():
+                if not n.startswith('Partitions/'): continue
+                st = rvtw.Stream(e.data)
+                if len(st.payload) < 40: continue
+                b = b''.join(bytes(m['raw']) for m in wlpart.Partition(st).mem); B = cls.BLK
+                r[n] = ([hash(b[i:i + B]) for i in range(0, len(b), B)], [hash(b[max(0, i - B):i]) for i in range(len(b), 0, -B)], len(b))
+            return r
+        except Exception: return {}
+
+    SPAN_MAX = 8192        # per declared element (<= 8): the changed window of a partition (prefix/suffix diff) was <= 1066 bytes on 60 real scenes
+
+    def span_checks(self, manifest):
+        h = getattr(self, '_blk_hist', [])
+        nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted'))
+        if not 1 <= nd <= 8 or len(h) < 2 or not h[0] or not h[1]: return []
+        bad = []
+        for n, (fa, ba, la) in h[0].items():
+            if n not in h[1]: continue
+            fb, bb, lb = h[1][n]
+            if (fa, la) == (fb, lb): continue
+            p = 0
+            while p < min(len(fa), len(fb)) and fa[p] == fb[p]: p += 1
+            q = 0
+            while q < min(len(ba), len(bb)) and ba[q] == bb[q]: q += 1
+            span = max(la, lb) - (p + q) * self.BLK
+            if span > self.SPAN_MAX * nd: bad.append(('span_changed', '%s: changed window ~%d bytes for %d declared elements' % (n, span, nd)))
+        return bad
+
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""
         h = getattr(self, '_mem_hist', [])
         if len(h) < 2 or not h[0] or not h[1]: return []
-        nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd); bad = []
+        bad = self.span_checks(manifest)
+        nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd)
         for n, a in h[0].items():
             b = h[1].get(n)
             if b is None or len(a) != len(b): continue

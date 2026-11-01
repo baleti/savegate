@@ -132,7 +132,8 @@ class DwgAdapter:
         """c4x-dwgreadfuzz: damage in the SOURCE that the writer would carry over byte for byte (overwrite is refused; SAVE AS stays possible)."""
         try:
             import dwgmodel
-            return self._crc_damage(dwgmodel.Model(buf))[:200]
+            m = dwgmodel.Model(buf)
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + self._crc_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 
@@ -186,6 +187,8 @@ class DwgAdapter:
         import dwgmodel
         m = dwgmodel.Model(buf)
         if m.version not in DWG_WRITABLE: raise VerifyFailed('output version %s' % m.version)
+        if getattr(m, 'omap_ok', None) is False:      # c4x-dwgreadfuzz: the writer rebuilds the object map, so a wrong map CRC in the OUTPUT is a writer bug (AutoCAD would call it a corrupt file)
+            raise VerifyFailed('object map CRC mismatch in the output')
         hs = m.header().get('HANDSEED')
         if isinstance(hs, int) and m.objs and hs <= max(m.objs):
             raise VerifyFailed('HANDSEED %x not above the highest handle %x' % (hs, max(m.objs)))

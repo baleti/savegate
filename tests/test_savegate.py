@@ -307,6 +307,29 @@ def test_rvt_gzip_inflate_is_bounded_in_source_damage(monkeypatch):
     assert any('inflates to more than 64 bytes' in d for d in dm), dm[:3]
 
 
+def test_dwg_output_with_bad_object_map_crc_is_refused(monkeypatch):
+    """c4x-dwgreadfuzz: Model.omap_ok False in the output (or the source) must fail validate / be listed by source_damage. Stub Model, synthetic."""
+    import types
+    from savegate.adapters import DwgAdapter, VerifyFailed
+    sys.path.insert(0, DWGLIB)
+    import dwgmodel
+    def fake(ok):
+        class FM:
+            version = 'AC1018'; objs = {}; omap_ok = ok
+            def __init__(s, buf): pass
+            def header(s): return {'HANDSEED': 10 ** 9}
+            def entities(s): return []
+        return FM
+    a = DwgAdapter.__new__(DwgAdapter)
+    monkeypatch.setattr(dwgmodel, 'Model', fake(False))
+    with pytest.raises(VerifyFailed, match='object map CRC'): a.validate(b'x')
+    assert 'object map: CRC mismatch' in a.source_damage(b'x')
+    monkeypatch.setattr(dwgmodel, 'Model', fake(True))
+    assert a.validate(b'x').startswith('ok') and a.source_damage(b'x') == []
+    monkeypatch.setattr(dwgmodel, 'Model', fake(None))
+    assert a.validate(b'x').startswith('ok')
+
+
 ENOSPC_SCRIPT = r'''
 import sys, os
 sys.path.insert(0, {root!r})
@@ -1171,3 +1194,26 @@ def test_rvt_gzip_member_with_bad_isize_or_crc_is_flagged(tmp_path):
         c.streams()[n].data = st.build(bytes(P), keep_spare=False); o = str(tmp_path / (what + '.rte')); cfb.write(c, o)
         dmg = ad.source_damage(open(o, 'rb').read())
         assert dmg, what
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_second_edit_of_the_same_record_or_in_ascending_order_is_refused_not_corrupting(tmp_path):
+    """c4x-rvtgap SEV1 (writer): two string edits of ONE record in one session (or an edit after an edit at a lower offset of the same partition) copied the stale original record and ate the start of the next element: element 17 became unreadable although the id set, ECC/CRC and validate were fine and the gate accepted it. The editor now refuses such an order before touching anything; a descending pair of edits in different records still gives a readable file."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src)
+    ss = lambda e_: [l for l in ed.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+    a, b = ss(16)[:2]; assert a[1] != b[1]
+    ed.set_string(16, b[1], b[4][:-1], match=b[4])
+    with pytest.raises(ValueError): ed.set_string(16, a[1], a[4] + 'XY', match=a[4])       # same record again
+    ed = wledit.Editor(src); ids = sorted(ed.m.ids); c16 = ss(16)[0]
+    e2 = next(e for e in ids if e > 16 and ed.trace(e)[0] == ed.trace(16)[0] and ss(e)); c17 = ss(e2)[0]
+    ed.set_string(16, c16[1], c16[4] + 'Q', match=c16[4])
+    with pytest.raises(ValueError): ed.set_string(e2, c17[1], c17[4] + 'Q', match=c17[4])     # ascending
+    key = lambda e_, ed_: [(l[0], l[1], l[4]) for l in ed_.trace(e_)[3]]
+    ed = wledit.Editor(src); before = {e: key(e, ed) for e in ids[:300]}
+    ed.set_string(e2, c17[1], c17[4] + 'Q', match=c17[4]); ed.set_string(16, c16[1], c16[4] + 'Q', match=c16[4])   # descending
+    o = str(tmp_path / 'o.rte'); ed.save(o); ob = open(o, 'rb').read(); ad = RvtAdapter()
+    assert ad.source_damage(ob) == [] and ad.validate(ob)
+    ed2 = wledit.Editor(o); assert sorted(ed2.m.ids) == ids
+    assert [e for e in before if key(e, ed2) != before[e]] == [16, e2]

@@ -129,6 +129,16 @@ class DwgAdapter:
             elif o.type == 49 and _plain(ms.blocks.get(h)) != _plain(mo.blocks.get(h)): bad.append(('block_renamed', 'obj:%x' % h))
         for h, n in ms.blocks.items():
             if h in mo.blocks and _plain(mo.blocks[h]) != _plain(n) and ('block_renamed', 'obj:%x' % h) not in bad: bad.append(('block_renamed', 'obj:%x' % h))
+        # c4x-dwgreadfuzz: every object whose bytes differ from the source must carry a valid per-object CRC16 (a writer bug or a flipped byte in a declared
+        # object was not seen by the element diff). Objects byte-identical to the source are exempt, so pre-existing damage never blocks a save.
+        try:
+            import dwgfmt as _F
+            for h, o in mo.objs.items():
+                r = o.raw; s0 = ms.objs.get(h)
+                if s0 is not None and s0.raw == r: continue
+                if len(r) < 4 or _F.crc16(r[:-2], 0xC0C1) != (r[-2] | (r[-1] << 8)): bad.append(('object_crc', 'obj:%x' % h))
+        except ImportError:
+            pass
         # a block record that stops being listed turns every entity it owns into an orphan that no reader walks (entities silently vanish; c8-perf 2026-10-30):
         # allowed only for a declared deletion (a dimension's anonymous block) or when it was never a block of the source
         mod, add, dele = self.expand(manifest); ok = dele | self.side_effects(manifest)

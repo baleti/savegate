@@ -1245,3 +1245,23 @@ def test_rvt_default_adapter_has_an_element_view(monkeypatch):
     assert pick_adapter(raw)[0].elements_fn is not None
     monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
     assert pick_adapter(raw)[0].elements_fn is None
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_set_strings_batch_any_order_and_two_fields_of_one_record(tmp_path):
+    """c4x-rvtgap: Editor.set_strings applies string edits given in ascending order and two fields of ONE record (both refused one by one) without damaging any neighbour: only the edited elements' logs change, ids equal, ECC/CRC clean"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src); ids = sorted(ed.m.ids)
+    ss = lambda e_, ed_=ed: [l for l in ed_.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+    a, b = ss(16)[:2]; assert a[1] != b[1]
+    e2 = next(e for e in ids if e > 16 and ed.trace(e)[0] == ed.trace(16)[0] and ss(e)); c = ss(e2)[0]
+    key = lambda e_, ed_: [(l[0], l[1], l[4]) for l in ed_.trace(e_)[3]]
+    before = {e: key(e, ed) for e in ids[:300]}
+    ed.set_strings([(16, a[1], a[4] + 'XY', a[4]), (e2, c[1], c[4][:-1], c[4]), (16, b[1], b[4] + 'Z', b[4])])    # ascending + two fields of record 16
+    o = str(tmp_path / 'o.rte'); ed.save(o); ob = open(o, 'rb').read(); ad = RvtAdapter()
+    assert ad.source_damage(ob) == [] and ad.validate(ob)
+    ed2 = wledit.Editor(o); assert sorted(ed2.m.ids) == ids
+    assert [e for e in before if key(e, ed2) != before[e]] == [16, e2]
+    v16 = [l[4] for l in ed2.trace(16)[3]]; assert a[4] + 'XY' in v16 and b[4] + 'Z' in v16
+    assert c[4][:-1] in [l[4] for l in ed2.trace(e2)[3]]

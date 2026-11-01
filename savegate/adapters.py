@@ -304,6 +304,12 @@ class RvtAdapter:
             try: els = self.elements_fn(buf)
             except Exception as ex: raise VerifyFailed('element view of the file could not be built (%s: %s)' % (type(ex).__name__, str(ex)[:120]))      # c4x-rvtgap: a file the reader cannot decode is not verifiable: refuse as VerifyFailed (not a DiskError)
             out.update({'el:' + str(k): v for k, v in els.items()})
+        if os.environ.get('SAVEGATE_RVT_IDCHECK', '1') != '0':
+            try:
+                from . import rvt_elements
+                out['meta:unresolved_ids'] = repr(rvt_elements.unresolved_ids(buf))      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
+            except ImportError: pass
+            except Exception as ex: raise VerifyFailed('id-resolution check failed (%s: %s)' % (type(ex).__name__, str(ex)[:120]))
         self._keys = set(out)
         self._mem_hist = (getattr(self, '_mem_hist', [])[-1:]) + [self._member_hashes(c)]     # [source, output] of the current verify
         self._blk_hist = (getattr(self, '_blk_hist', [])[-1:]) + [self._block_hashes(c)]

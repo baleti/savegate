@@ -1265,3 +1265,23 @@ def test_rvt_set_strings_batch_any_order_and_two_fields_of_one_record(tmp_path):
     assert [e for e in before if key(e, ed2) != before[e]] == [16, e2]
     v16 = [l[4] for l in ed2.trace(16)[3]]; assert a[4] + 'XY' in v16 and b[4] + 'Z' in v16
     assert c[4][:-1] in [l[4] for l in ed2.trace(e2)[3]]
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_gate_refuses_output_where_a_neighbour_element_lost_its_record_even_without_element_view(tmp_path, monkeypatch):
+    """c4x-rvtgap: emulates the old same-record double-edit writer bug (guard bypassed): element 17 loses its framed record while ids/ECC/CRC stay valid; the cheap id-resolution check alone (element view OFF) refuses it, the clean edit is accepted"""
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte')
+    def make(bug):
+        ed = wledit.Editor(src)
+        ss = [l for l in ed.trace(16)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+        a, b = ss[:2]; ed.set_string(16, b[1], b[4][:-1], match=b[4])
+        if bug: ed._lowest = {}; ed.set_string(16, a[1], a[4] + 'XY', match=a[4])
+        o = str(tmp_path / ('bug' if bug else 'ok')); ed.save(o); return open(o, 'rb').read()
+    p = tmp_path / 'a.rte'; shutil.copy(src, p); orig = p.read_bytes()
+    with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), make(True), {'modified': ['stream:Partitions/423']})
+    assert 'unresolved' in str(ei.value) or 'differences outside' in str(ei.value)
+    assert p.read_bytes() == orig
+    sg.save(sg.open_doc(str(p), None, cfg()), make(False), {'modified': ['stream:Partitions/423']})

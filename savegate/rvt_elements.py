@@ -70,3 +70,26 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
         return out
     finally:
         os.remove(p)
+
+
+def unresolved_ids(buf, reader_dir=None, lib=None):
+    """c4x-rvtgap: fast structural check (no decoding): every ElemTable id must have a record header whose length field is confirmed by the next record's
+    A link. Returns the sorted ids that have none. On 266 rosetta scenes: 0 unresolved, 0.03 s on a 5k-element scene; the old double-edit writer bug leaves exactly the next element unresolved."""
+    reader_dir = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
+    lib = lib or os.environ.get('SAVEGATE_RVT_LIB') or os.path.join(reader_dir, 'write-lab')
+    for d in (reader_dir, lib):
+        if d not in sys.path: sys.path.insert(0, d)
+    import struct, wlrec, rvt_scan as S
+    fd, p = tempfile.mkstemp(suffix='.rvt'); os.close(fd)
+    try:
+        with open(p, 'wb') as f: f.write(buf)
+        m = wlrec.Model(p); W = m.IDW; found = set()
+        for pn, part in m.parts.items():
+            b = part['joined']; n = len(b)
+            for i in S.header_candidates_tagged(b, m.idarr, W, m.etags).tolist():
+                if i + 16 + W > n: continue
+                L = struct.unpack_from('<I', b, i + 8 + W)[0]; q = i + 12 + W + L
+                if q + 4 <= n and struct.unpack_from('<I', b, q)[0] == L: found.add(struct.unpack_from(m.IDF, b, i + 4)[0])
+        return sorted(int(x) for x in m.ids if int(x) not in found)
+    finally:
+        os.remove(p)

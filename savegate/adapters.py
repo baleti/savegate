@@ -308,6 +308,7 @@ class RvtAdapter:
             try:
                 from . import rvt_elements
                 ids, ur = rvt_elements.id_state(buf); out['meta:unresolved_ids'] = repr(ur); out['meta:n_ids'] = str(len(ids))
+                self._ctr_hist = (getattr(self, '_ctr_hist', [])[-1:]) + [rvt_elements.counter_state(buf)]
                 self._unres_hist = (getattr(self, '_unres_hist', [])[-1:]) + [ur]; self._ids_hist = (getattr(self, '_ids_hist', [])[-1:]) + [set(ids)]      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
             except ImportError: pass
             except Exception as ex: raise VerifyFailed('id-resolution check failed (%s: %s)' % (type(ex).__name__, str(ex)[:120]))
@@ -379,6 +380,9 @@ class RvtAdapter:
                 try: decl.add(int(str(k).split(':')[-1]))
                 except ValueError: pass
             new = set(uh[1]) - set(uh[0]) - decl
+            ch = getattr(self, '_ctr_hist', [])
+            if len(ch) >= 2 and ch[0] and ch[1] and ch[0][0] >= ch[0][1] and ch[1][0] < ch[1][1]:
+                bad.append(('id_counter', 'ElemTable id counter %d is below the highest element id %d in the output (source: %d >= %d): Revit would hand out an id that already exists' % (ch[1][0], ch[1][1], ch[0][0], ch[0][1])))
             ih = getattr(self, '_ids_hist', [])
             if len(ih) >= 2:      # added elements: each declared el:<id> must be in the output ElemTable and resolve; no other id may appear or vanish
                 add = set()

@@ -97,3 +97,17 @@ def id_state(buf, reader_dir=None, lib=None):
 
 def unresolved_ids(buf, reader_dir=None, lib=None):
     return id_state(buf, reader_dir, lib)[1]
+
+
+def counter_state(buf, lib=None):
+    """c4x-rvtgap: (id_counter, max_id) from Global/ElemTable (u32 at len-12 of the raw table; rows of 40 bytes with 8-byte ids, 24-byte tail), or None when the layout is not
+    recognised. On 274 of 278 current-format scenes counter >= max id (258 equal): the counter is the last id handed out, so a clone/add with id > counter lets Revit reuse that id."""
+    lib = lib or os.environ.get('SAVEGATE_RVT_LIB') or os.path.expanduser('~/rvt-research/write-lab')
+    if lib not in sys.path: sys.path.insert(0, lib)
+    import struct, cfb, rvtw
+    try:
+        c = cfb.CFB(buf); P = rvtw.Stream(c.streams()['Global/ElemTable'].data).payload; raw, _ = rvtw.read_member(P, P.find(rvtw.GZ))
+        n = struct.unpack_from('<I', raw, 2)[0]
+        if n < 1 or (len(raw) - 6 - 24) != n * 40: return None
+        return struct.unpack_from('<I', raw, len(raw) - 12)[0], max(int.from_bytes(raw[6 + k * 40:6 + k * 40 + 8], 'little') for k in range(n))
+    except Exception: return None

@@ -1321,7 +1321,7 @@ def test_rvt_declared_added_element_must_be_in_elemtable_and_resolve(tmp_path, m
     wl = os.path.expanduser('~/rvt-research/write-lab'); sys.path.insert(0, wl)
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
     src = os.path.join(ROS, '2024_roof_ceiling_base.rte')
-    env = dict(os.environ, MODE='min'); good = str(tmp_path / 'good.rte')
+    env = dict(os.environ, MODE='min', COUNTER='1'); good = str(tmp_path / 'good.rte')
     r = subprocess.run([sys.executable, os.path.join(wl, 'e7.py'), src, good, '16'], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-300:]
     new_id = int(r.stdout.split('new id')[1].split()[0]); gb = open(good, 'rb').read()
@@ -1335,3 +1335,18 @@ def test_rvt_declared_added_element_must_be_in_elemtable_and_resolve(tmp_path, m
     assert p.read_bytes() == orig
     sg.save(sg.open_doc(str(p), None, cfg()), gb, decl)
     assert p.read_bytes() == gb
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_clone_without_id_counter_bump_is_refused(tmp_path, monkeypatch):
+    """c4x-rvtgap: write-lab e7.py without COUNTER leaves the ElemTable id counter below the new element's id (Revit would reuse it); refused with id_counter, accepted with COUNTER=1"""
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    wl = os.path.expanduser('~/rvt-research/write-lab'); src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); outs = {}
+    for k, extra in (('nobump', {}), ('bump', {'COUNTER': '1'})):
+        o = str(tmp_path / (k + '.rte')); r = subprocess.run([sys.executable, os.path.join(wl, 'e7.py'), src, o, '16'], env=dict(os.environ, MODE='min', **extra), capture_output=True, text=True); assert r.returncode == 0, r.stderr[-300:]
+        outs[k] = (open(o, 'rb').read(), int(r.stdout.split('new id')[1].split()[0]))
+    p = tmp_path / 'a.rte'; shutil.copy(src, p); orig = p.read_bytes()
+    nid = outs['nobump'][1]; decl = {'added': ['el:%d' % nid], 'modified': ['stream:Partitions/423', 'stream:Global/ElemTable']}
+    with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), outs['nobump'][0], decl)
+    assert 'id_counter' in str(ei.value.report) and p.read_bytes() == orig
+    sg.save(sg.open_doc(str(p), None, cfg()), outs['bump'][0], decl)

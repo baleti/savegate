@@ -307,7 +307,8 @@ class RvtAdapter:
         if os.environ.get('SAVEGATE_RVT_IDCHECK', '1') != '0':
             try:
                 from . import rvt_elements
-                out['meta:unresolved_ids'] = repr(rvt_elements.unresolved_ids(buf))      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
+                ur = rvt_elements.unresolved_ids(buf); out['meta:unresolved_ids'] = repr(ur)
+                self._unres_hist = (getattr(self, '_unres_hist', [])[-1:]) + [ur]      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
             except ImportError: pass
             except Exception as ex: raise VerifyFailed('id-resolution check failed (%s: %s)' % (type(ex).__name__, str(ex)[:120]))
         self._keys = set(out)
@@ -371,6 +372,14 @@ class RvtAdapter:
         h = getattr(self, '_mem_hist', [])
         if len(h) < 2 or not h[0]: return []      # c4x-rvtgap: an EMPTY output map is no reason to skip (all partitions vanished)
         bad = self.span_checks(manifest)
+        uh = getattr(self, '_unres_hist', [])
+        if len(uh) >= 2:
+            decl = set()
+            for k in manifest.get('deleted', ()):
+                try: decl.add(int(str(k).split(':')[-1]))
+                except ValueError: pass
+            new = set(uh[1]) - set(uh[0]) - decl
+            if new: bad.append(('unresolved_ids', 'ElemTable ids without a framed record in the output that were not declared deleted: %s' % sorted(new)[:8]))
         nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd)
         for n, a in h[0].items():
             b = h[1].get(n)
@@ -382,7 +391,9 @@ class RvtAdapter:
         return bad
 
     def expand(self, manifest):
-        return set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ()))
+        mod = set(manifest.get('modified', ()))
+        if manifest.get('deleted'): mod.add('meta:unresolved_ids')      # c4x-rvtgap: a deleted record leaves its ElemTable id unresolved; extra_checks demands that exactly the declared ids did
+        return mod, set(manifest.get('added', ())), set(manifest.get('deleted', ()))
 
     def side_effects(self, manifest):
         """With an element-level view, an element edit rewrites the partition / global streams that hold it; those stream keys

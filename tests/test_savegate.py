@@ -1296,3 +1296,19 @@ def test_hardlinked_target_is_refused_unless_allowed(tmp_path):
     c = cfg(); c.allow_hardlink_break = True
     with sg.open_doc(p, RawAdapter(), c) as doc: sg.save(doc, b'NEW' * 10, {'modified': ['file']})
     assert open(p, 'rb').read() == b'NEW' * 10 and open(l, 'rb').read() == data
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_declared_delete_leaves_only_the_declared_id_unresolved(tmp_path, monkeypatch):
+    """c4x-rvtgap: Editor.delete keeps the id in ElemTable (no record behind it). The id-resolution check must accept exactly the declared deleted id and refuse the same output when another id is declared (element view OFF)"""
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src)
+    e = next(x for x in sorted(ed.m.ids) if x > 16 and ed.trace(x)[0] == ed.trace(16)[0]); ed.delete(e)
+    o = str(tmp_path / 'o.rte'); ed.save(o); new = open(o, 'rb').read()
+    p = tmp_path / 'a.rte'; shutil.copy(src, p); orig = p.read_bytes()
+    with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), None, cfg()), new, {'deleted': ['el:%d' % (e + 1)], 'modified': ['stream:' + ed.trace(e)[0] if False else 'stream:Partitions/423']})
+    assert p.read_bytes() == orig
+    sg.save(sg.open_doc(str(p), None, cfg()), new, {'deleted': ['el:%d' % e], 'modified': ['stream:Partitions/423']})
+    assert p.read_bytes() == new

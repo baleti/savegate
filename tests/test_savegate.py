@@ -330,6 +330,24 @@ def test_dwg_output_with_bad_object_map_crc_is_refused(monkeypatch):
     assert a.validate(b'x').startswith('ok')
 
 
+def test_dwg_r2004_page_checksums_are_checked():
+    """c4x-dwgreadfuzz: R2004-family data page header/data checksums (the reader inflates a damaged page silently). Synthetic one-page buffer."""
+    import struct, zlib
+    from savegate.adapters import _page_problems
+    data = bytes(range(200)); addr = 64
+    def page(data):
+        f = [0x4163043B, 1, len(data), len(data), 0, 0, 0, zlib.adler32(data, 0) & 0xffffffff]
+        h = list(f); h[6] = 0; f[6] = zlib.adler32(struct.pack('<8I', *h), f[7]) & 0xffffffff
+        mask = 0x4164536B ^ addr
+        return bytes(addr) + struct.pack('<8I', *[x ^ mask for x in f]) + data
+    info = {'sections': {'S': {'pages': [(5, len(data), 0)]}}, 'pages': {5: (addr, 232)}}
+    good = page(data)
+    assert _page_problems(good, info) == []
+    bd = bytearray(good); bd[addr + 40] ^= 1; assert any('data checksum' in x for x in _page_problems(bytes(bd), info))
+    bh = bytearray(good); bh[addr + 8] ^= 1; assert any('checksum' in x or 'bad page type' in x or 'beyond' in x for x in _page_problems(bytes(bh), info))
+    assert _page_problems(good[:addr + 100], info) and _page_problems(good, None) == []
+
+
 ENOSPC_SCRIPT = r'''
 import sys, os
 sys.path.insert(0, {root!r})

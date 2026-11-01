@@ -13,6 +13,27 @@ GZ_CAP = 1 << 30      # same bound as rvtw.GZ_CAP: largest plausible decompresse
 def _h(b): return hashlib.sha1(b).hexdigest()
 
 
+def _page_problems(buf, info):
+    """R2004-family data pages whose stored checksums do not match (header checksum = adler over the decoded 32-byte header seeded with the data checksum; data checksum = adler over
+    the stored bytes). The reader inflates a damaged page silently, AutoCAD refuses it. [] when info is None (R2000). Same rule as dwg-viewer dwgfmt.r2004_page_problems."""
+    import struct, zlib
+    out = []
+    if not info: return out
+    for name, sec in info['sections'].items():
+        for num, psz, start in sec['pages']:
+            if num not in info['pages']: continue
+            addr, _ = info['pages'][num]
+            if addr < 0 or addr + 32 > len(buf): out.append('%s page %d: header beyond end of file' % (name, num)); continue
+            mask = 0x4164536B ^ addr
+            f = [x ^ mask for x in struct.unpack_from('<8I', buf, addr)]
+            if f[0] != 0x4163043B: out.append('%s page %d: bad page type' % (name, num)); continue
+            if addr + 32 + f[2] > len(buf): out.append('%s page %d: data beyond end of file' % (name, num)); continue
+            hdr = list(f); hdr[6] = 0
+            if zlib.adler32(struct.pack('<8I', *hdr), f[7]) & 0xffffffff != f[6]: out.append('%s page %d: header checksum' % (name, num))
+            elif zlib.adler32(bytes(buf[addr + 32:addr + 32 + f[2]]), 0) & 0xffffffff != f[7]: out.append('%s page %d: data checksum' % (name, num))
+    return out
+
+
 class RawAdapter:
     """no format knowledge: the whole file is one object (tests, unknown formats are refused by pick_adapter)"""
     name = 'raw'
@@ -133,7 +154,7 @@ class DwgAdapter:
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + self._crc_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 
@@ -189,6 +210,8 @@ class DwgAdapter:
         if m.version not in DWG_WRITABLE: raise VerifyFailed('output version %s' % m.version)
         if getattr(m, 'omap_ok', None) is False:      # c4x-dwgreadfuzz: the writer rebuilds the object map, so a wrong map CRC in the OUTPUT is a writer bug (AutoCAD would call it a corrupt file)
             raise VerifyFailed('object map CRC mismatch in the output')
+        pp = _page_problems(buf, getattr(m, '_info', None))
+        if pp: raise VerifyFailed('page checksum mismatch in the output (%d, first: %s)' % (len(pp), pp[0]))
         hs = m.header().get('HANDSEED')
         if isinstance(hs, int) and m.objs and hs <= max(m.objs):
             raise VerifyFailed('HANDSEED %x not above the highest handle %x' % (hs, max(m.objs)))

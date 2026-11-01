@@ -279,6 +279,21 @@ def test_dwg_changed_object_with_bad_crc_is_refused():
     dsrc = M({1: r1, 2: bad}); a._pair = (dsrc, M({1: r1, 2: bad})); assert a.extra_checks({}) == []   # pre-existing damage, unchanged: tolerated
 
 
+def test_dwg_source_damage_lists_bad_object_crcs():
+    """c4x-dwgreadfuzz: a source with a CRC-damaged object is reported (overwrite refused by core), a clean one is not. Stub models, synthetic bytes."""
+    sys.path.insert(0, DWGLIB)
+    import dwgfmt
+    from savegate.adapters import DwgAdapter
+    c = dwgfmt.crc16(b'abcdef', 0xC0C1); okraw = b'abcdef' + bytes([c & 255, c >> 8])
+    class O:
+        def __init__(s, raw): s.raw = raw
+    class M:
+        def __init__(s, d): s.objs = {h: O(r) for h, r in d.items()}
+    assert DwgAdapter._crc_damage(M({1: okraw})) == []
+    assert DwgAdapter._crc_damage(M({1: okraw, 2: okraw[:3] + b'X' + okraw[4:]})) == ['obj:2: object CRC mismatch']
+    assert DwgAdapter._crc_damage(M({3: b'ab'})) == ['obj:3: object CRC mismatch']
+
+
 ENOSPC_SCRIPT = r'''
 import sys, os
 sys.path.insert(0, {root!r})

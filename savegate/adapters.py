@@ -115,6 +115,24 @@ class DwgAdapter:
         return mod, add, dele
 
 
+    @staticmethod
+    def _crc_damage(m):
+        """Objects of model m whose per-object CRC16 is wrong (bytes damaged although the container parsed)."""
+        try:
+            import dwgfmt as _F
+        except ImportError:
+            return []
+        return ['obj:%x: object CRC mismatch' % h for h, o in m.objs.items()
+                if len(o.raw) < 4 or _F.crc16(o.raw[:-2], 0xC0C1) != (o.raw[-2] | (o.raw[-1] << 8))]
+
+    def source_damage(self, buf):
+        """c4x-dwgreadfuzz: damage in the SOURCE that the writer would carry over byte for byte (overwrite is refused; SAVE AS stays possible)."""
+        try:
+            import dwgmodel
+            return self._crc_damage(dwgmodel.Model(buf))[:200]
+        except Exception as e:
+            return ['source not readable: %s' % str(e)[:100]]
+
     def extra_checks(self, manifest):
         """Structural objects tolerated as side effects (block records, BLOCK/ENDBLK, tables) must keep their identity: a changed
         BLOCK/ENDBLK object is never a legitimate side effect (they are only added/removed with a dimension), and a changed BLOCK_HEADER

@@ -50,6 +50,7 @@ class Doc:
 
 def open_doc(path, adapter=None, cfg=None, journal=True):
     cfg = cfg or Config()
+    if os.path.islink(path): path = os.path.realpath(path)      # in-place save must update the real file, not replace the link
     with open(long_path(path), 'rb') as f: buf = f.read()
     st = os.stat(long_path(path))
     from .guard import Fingerprint

@@ -1066,3 +1066,13 @@ def test_rvt_string_edit_unicode_roundtrips_and_bad_edits_are_refused_before_any
         with pytest.raises(Exception):
             call(ed, e, f, v); ed.save(o)
         assert not os.path.exists(o)
+
+
+def test_save_through_symlink_updates_target_and_keeps_the_link(tmp_path):
+    """c4x-rvtgap: in-place save of a path that is a symlink must write the real file (link kept), not replace the link with a regular file and leave the target stale"""
+    real = tmp_path / 'real'; real.mkdir(); p = mk(real, data=b'original', name='m.bin')
+    lnk = tmp_path / 'link.bin'; os.symlink(p, lnk)
+    with sg.open_doc(str(lnk), RawAdapter(), cfg()) as doc:
+        assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
+    assert os.path.islink(lnk), 'link was replaced by a regular file'
+    assert open(p, 'rb').read() == b'NEW' and open(lnk, 'rb').read() == b'NEW'

@@ -1021,3 +1021,20 @@ def test_rvt_workshared_model_is_not_overwritten_in_place(tmp_path):
     if os.path.isdir(ROS):
         q = tmp_path / 'n.rte'; r2 = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); q.write_bytes(r2)
         assert sg.save(sg.open_doc(str(q), None, cfg()), r2, {}).ok
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_declared_partition_stream_emptied_is_refused(tmp_path):
+    """c4x-rvtgap SEV1 ESCAPE: the declared-modified Partitions stream replaced by an EMPTY stream (valid container, no ECC page, no member) used to be accepted; the clean edit still passes"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit'); pytest.importorskip('numpy'); pytest.importorskip('olefile')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); raw = open(src, 'rb').read(); ed = wledit.Editor(src)
+    e, l = next((e, l) for e in sorted(ed.m.ids) for l in (ed.trace(e)[3] if e < 30000 else []) if l[1] == 'FamilyBase.m_name' and l[3] - l[2] == 4 + 2 * len(l[4]))
+    ed.set_string(e, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / 'ok.rte'); ed.save(o); ok = open(o, 'rb').read()
+    c = cfb.CFB(ok); n = [k for k in c.streams() if k.startswith('Partitions/')][0]; c.streams()[n].data = b''
+    t = str(tmp_path / 't.rte'); cfb.write(c, t); bad = open(t, 'rb').read()
+    p = tmp_path / 'a.rte'; p.write_bytes(raw)
+    assert sg.save(sg.open_doc(str(p), RvtAdapter(), cfg()), ok, {'modified': ['stream:' + n]}).ok
+    p.write_bytes(raw)
+    with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), RvtAdapter(), cfg()), bad, {'modified': ['stream:' + n]})
+    assert p.read_bytes() == raw

@@ -1126,3 +1126,20 @@ def test_rvt_gate_refuses_a_renamed_dropped_or_extra_stream_in_the_output(tmp_pa
         assert hashlib.sha256(p.read_bytes()).hexdigest() == h, "ORIGINAL CHANGED after stream %s" % n
         if bad: break
     assert not bad, bad
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_gzip_member_with_bad_isize_or_crc_is_flagged(tmp_path):
+    """c4x-rvtgap: a Global stream member whose ISIZE or CRC field is wrong, with otherwise valid page ECC (stream rebuilt) is reported by source_damage, so it can neither be saved over nor accepted as output"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); import struct
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); ad = RvtAdapter(); assert ad.source_damage(raw) == []
+    c0 = cfb.CFB(raw); n = [k for k in c0.streams() if k.startswith('Global/') and k != 'Global/ContentDocuments' and rvtw.Stream(c0.streams()[k].data).payload.find(rvtw.GZ) >= 0][0]
+    for what in ('isize', 'crc'):
+        c = cfb.CFB(raw); st = rvtw.Stream(c.streams()[n].data); P = bytearray(st.payload); i = P.find(rvtw.GZ)
+        import zlib; do = zlib.decompressobj(-15); do.decompress(bytes(P[i + 10:])); end = len(P) - len(do.unused_data) + 8
+        if what == 'isize': P[end - 4] ^= 1
+        elif what == 'crc': P[end - 8] ^= 1
+        c.streams()[n].data = st.build(bytes(P), keep_spare=False); o = str(tmp_path / (what + '.rte')); cfb.write(c, o)
+        dmg = ad.source_damage(open(o, 'rb').read())
+        assert dmg, what

@@ -1038,3 +1038,31 @@ def test_rvt_declared_partition_stream_emptied_is_refused(tmp_path):
     p.write_bytes(raw)
     with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), RvtAdapter(), cfg()), bad, {'modified': ['stream:' + n]})
     assert p.read_bytes() == raw
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_string_edit_unicode_roundtrips_and_bad_edits_are_refused_before_any_output(tmp_path):
+    """c4x-rvtgap: non-ASCII/astral/NUL/empty replacement strings read back exactly and give a valid container; a lone surrogate, an unknown element id and a non-matching `match` raise before an output exists (no partial file)"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte')
+    def cand(ed):
+        for e in sorted(ed.m.ids)[:600]:
+            try: log = ed.trace(e)[3]
+            except Exception: continue
+            for l in log:
+                if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]: return e, l[1], l[4]
+    ad = RvtAdapter()
+    for i, new in enumerate(['Ünï中文', 'a\U0001F600b', 'a\x00b', '']):
+        ed = wledit.Editor(src); e, f, v = cand(ed); o = str(tmp_path / ('o%d.rte' % i))
+        ed.set_string(e, f, new, match=v); ed.save(o); ob = open(o, 'rb').read()
+        assert ad.source_damage(ob) == [] and ad.validate(ob)
+        ed2 = wledit.Editor(o); assert sorted(ed2.m.ids) == sorted(ed.m.ids)
+        assert new in [l[4] for l in ed2.trace(e)[3] if l[1] == f]
+    for k, call in enumerate([lambda ed, e, f, v: ed.set_string(e, f, 'a\ud800b', match=v),
+                              lambda ed, e, f, v: ed.set_string(99999999, f, 'x'),
+                              lambda ed, e, f, v: ed.set_string(e, f, 'x', match=v + 'zz')]):
+        ed = wledit.Editor(src); e, f, v = cand(ed); o = str(tmp_path / ('bad%d.rte' % k))
+        with pytest.raises(Exception):
+            call(ed, e, f, v); ed.save(o)
+        assert not os.path.exists(o)

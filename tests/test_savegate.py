@@ -1312,3 +1312,26 @@ def test_rvt_declared_delete_leaves_only_the_declared_id_unresolved(tmp_path, mo
     assert p.read_bytes() == orig
     sg.save(sg.open_doc(str(p), None, cfg()), new, {'deleted': ['el:%d' % e], 'modified': ['stream:Partitions/423']})
     assert p.read_bytes() == new
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_declared_added_element_must_be_in_elemtable_and_resolve(tmp_path, monkeypatch):
+    """c4x-rvtgap: a clone written without the ElemTable row (Editor.clone does not add it) must not pass as 'added'; with the row (write-lab e7.py flow) the declared add is accepted, an undeclared one is refused (element view OFF)"""
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    wl = os.path.expanduser('~/rvt-research/write-lab'); sys.path.insert(0, wl)
+    pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = os.path.join(ROS, '2024_roof_ceiling_base.rte')
+    env = dict(os.environ, MODE='min'); good = str(tmp_path / 'good.rte')
+    r = subprocess.run([sys.executable, os.path.join(wl, 'e7.py'), src, good, '16'], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-300:]
+    new_id = int(r.stdout.split('new id')[1].split()[0]); gb = open(good, 'rb').read()
+    ed = wledit.Editor(src); ed.clone(16, new_id); nb = str(tmp_path / 'norow.rte'); ed.save(nb); nrb = open(nb, 'rb').read()      # no ElemTable row
+    decl = {'added': ['el:%d' % new_id], 'modified': ['stream:Partitions/423', 'stream:Global/ElemTable']}
+    p = tmp_path / 'a.rte'; shutil.copy(src, p); orig = p.read_bytes()
+    with pytest.raises(sg.VerifyFailed) as ei0: sg.save(sg.open_doc(str(p), None, cfg()), nrb, decl)
+    assert 'id_set' in str(ei0.value.report) or 'ElemTable id' in str(ei0.value), str(ei0.value.report)[:300]
+    assert p.read_bytes() == orig
+    with pytest.raises(sg.VerifyFailed): sg.save(sg.open_doc(str(p), None, cfg()), gb, {'modified': decl['modified']})      # undeclared add
+    assert p.read_bytes() == orig
+    sg.save(sg.open_doc(str(p), None, cfg()), gb, decl)
+    assert p.read_bytes() == gb

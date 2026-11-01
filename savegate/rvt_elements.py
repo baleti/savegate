@@ -72,7 +72,7 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
         os.remove(p)
 
 
-def unresolved_ids(buf, reader_dir=None, lib=None):
+def id_state(buf, reader_dir=None, lib=None):
     """c4x-rvtgap: fast structural check (no decoding): every ElemTable id must have a record header whose length field is confirmed by the next record's
     A link. Returns the sorted ids that have none. On 266 rosetta scenes: 0 unresolved, 0.03 s on a 5k-element scene; the old double-edit writer bug leaves exactly the next element unresolved."""
     reader_dir = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
@@ -90,6 +90,10 @@ def unresolved_ids(buf, reader_dir=None, lib=None):
                 if i + 16 + W > n: continue
                 L = struct.unpack_from('<I', b, i + 8 + W)[0]; q = i + 12 + W + L
                 if q + 4 <= n and struct.unpack_from('<I', b, q)[0] == L: found.add(struct.unpack_from(m.IDF, b, i + 4)[0])
-        return sorted(int(x) for x in m.ids if int(x) not in found)
+        return sorted(int(x) for x in m.ids), sorted(int(x) for x in m.ids if int(x) not in found)
     finally:
         os.remove(p)
+
+
+def unresolved_ids(buf, reader_dir=None, lib=None):
+    return id_state(buf, reader_dir, lib)[1]

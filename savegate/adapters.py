@@ -307,8 +307,8 @@ class RvtAdapter:
         if os.environ.get('SAVEGATE_RVT_IDCHECK', '1') != '0':
             try:
                 from . import rvt_elements
-                ur = rvt_elements.unresolved_ids(buf); out['meta:unresolved_ids'] = repr(ur)
-                self._unres_hist = (getattr(self, '_unres_hist', [])[-1:]) + [ur]      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
+                ids, ur = rvt_elements.id_state(buf); out['meta:unresolved_ids'] = repr(ur); out['meta:n_ids'] = str(len(ids))
+                self._unres_hist = (getattr(self, '_unres_hist', [])[-1:]) + [ur]; self._ids_hist = (getattr(self, '_ids_hist', [])[-1:]) + [set(ids)]      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
             except ImportError: pass
             except Exception as ex: raise VerifyFailed('id-resolution check failed (%s: %s)' % (type(ex).__name__, str(ex)[:120]))
         self._keys = set(out)
@@ -379,6 +379,14 @@ class RvtAdapter:
                 try: decl.add(int(str(k).split(':')[-1]))
                 except ValueError: pass
             new = set(uh[1]) - set(uh[0]) - decl
+            ih = getattr(self, '_ids_hist', [])
+            if len(ih) >= 2:      # added elements: each declared el:<id> must be in the output ElemTable and resolve; no other id may appear or vanish
+                add = set()
+                for k in manifest.get('added', ()):
+                    try: add.add(int(str(k).split(':')[-1]))
+                    except ValueError: pass
+                gone = ih[0] - ih[1] - decl; extra = ih[1] - ih[0] - add; missing = add - ih[1]; dang = add & set(uh[1])
+                if gone or extra or missing or dang: bad.append(('id_set', 'ElemTable id set vs declaration: vanished %s, undeclared new %s, declared added but absent %s, added without record %s' % (sorted(gone)[:5], sorted(extra)[:5], sorted(missing)[:5], sorted(dang)[:5])))
             if new: bad.append(('unresolved_ids', 'ElemTable ids without a framed record in the output that were not declared deleted: %s' % sorted(new)[:8]))
         nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd)
         for n, a in h[0].items():
@@ -392,6 +400,7 @@ class RvtAdapter:
 
     def expand(self, manifest):
         mod = set(manifest.get('modified', ()))
+        if manifest.get('added'): mod.add('meta:n_ids')
         if manifest.get('deleted'): mod.add('meta:unresolved_ids')      # c4x-rvtgap: a deleted record leaves its ElemTable id unresolved; extra_checks demands that exactly the declared ids did
         return mod, set(manifest.get('added', ())), set(manifest.get('deleted', ()))
 

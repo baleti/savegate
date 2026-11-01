@@ -965,7 +965,7 @@ def test_rvt_gate_refuses_a_corrupt_modified_stream_in_the_output(tmp_path):
     o = str(tmp_path / 'bad.rte'); cfb.write(c, o); bad = open(o, 'rb').read()
     p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest()
     with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), bad, {'modified': ['stream:' + name]})
-    assert ('integrity' in str(ei.value) or 'span_changed' in str(ei.value)) and hashlib.sha256(p.read_bytes()).hexdigest() == h
+    assert ('integrity' in str(ei.value) or 'span_changed' in str(ei.value) or 'differences outside' in str(ei.value)) and hashlib.sha256(p.read_bytes()).hexdigest() == h
 
 
 @pytest.mark.skipif(not os.path.isdir(RFA), reason='Autodesk sample rfa absent')
@@ -1235,3 +1235,13 @@ def test_rvt_second_edit_of_the_same_record_or_in_ascending_order_is_refused_not
     assert ad.source_damage(ob) == [] and ad.validate(ob)
     ed2 = wledit.Editor(o); assert sorted(ed2.m.ids) == ids
     assert [e for e in before if key(e, ed2) != before[e]] == [16, e2]
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_default_adapter_has_an_element_view(monkeypatch):
+    """c4x-rvtgap: pick_adapter must give RvtAdapter an element view by default (a corrupted neighbour record with valid ECC/CRC is invisible to stream/member hashes); SAVEGATE_RVT_ELEMENTS=0 turns it off"""
+    from savegate.adapters import pick_adapter
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read()
+    assert pick_adapter(raw)[0].elements_fn is not None
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    assert pick_adapter(raw)[0].elements_fn is None

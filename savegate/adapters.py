@@ -301,7 +301,9 @@ class RvtAdapter:
         out['meta:streams'] = repr(sorted(c.streams()))
         out['meta:sector'] = '%d' % c.major
         if self.elements_fn:
-            out.update({'el:' + str(k): v for k, v in self.elements_fn(buf).items()})
+            try: els = self.elements_fn(buf)
+            except Exception as ex: raise VerifyFailed('element view of the file could not be built (%s: %s)' % (type(ex).__name__, str(ex)[:120]))      # c4x-rvtgap: a file the reader cannot decode is not verifiable: refuse as VerifyFailed (not a DiskError)
+            out.update({'el:' + str(k): v for k, v in els.items()})
         self._keys = set(out)
         self._mem_hist = (getattr(self, '_mem_hist', [])[-1:]) + [self._member_hashes(c)]     # [source, output] of the current verify
         self._blk_hist = (getattr(self, '_blk_hist', [])[-1:]) + [self._block_hashes(c)]
@@ -414,10 +416,22 @@ class RvtAdapter:
         return 'ok %d streams' % len(s)
 
 
+def _default_rvt_elements():
+    rd = os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
+    if not os.path.isdir(rd): return None
+    def fn(buf):
+        from . import rvt_elements
+        return rvt_elements.elements(buf, with_geometry=False)
+    return fn
+
+
 def pick_adapter(buf, adapter=None):
     if adapter is not None:
         return adapter, adapter.sniff(buf) or '?'
     for cls in (DwgAdapter, RvtAdapter):
         a = cls(); v = a.sniff(buf)
-        if v: return a, v
+        if v:
+            if cls is RvtAdapter and a.elements_fn is None and os.environ.get('SAVEGATE_RVT_ELEMENTS', '1') != '0':
+                a.elements_fn = _default_rvt_elements()      # c4x-rvtgap: without an element view a corrupted neighbour record (valid ECC/CRC) passes the gate; default ON, set SAVEGATE_RVT_ELEMENTS=0 to disable
+            return a, v
     raise UnsupportedVersion('unknown or unsupported file format (not a writable DWG/RVT)')

@@ -1,4 +1,4 @@
-import os, stat, sys, time, hashlib, subprocess, signal, shutil, errno, pytest
+import os, stat, struct, sys, time, hashlib, subprocess, signal, shutil, errno, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import savegate as sg
 from savegate import atomic
@@ -1108,3 +1108,21 @@ def test_rvt_source_changed_after_open_is_a_conflict_even_with_same_size_and_mti
         open(p, 'wb').write(bytes(b)); os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
         with pytest.raises(sg.Conflict): sg.save(doc, doc.buf, {'modified': []})
     assert open(p, 'rb').read() == bytes(b) and not leftovers(tmp_path)
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_gate_refuses_a_renamed_dropped_or_extra_stream_in_the_output(tmp_path):
+    """c4x-rvtgap: output identical to the source except that ONE stream entry is renamed (= a stream dropped and an unknown one added, data/ECC/CRC all valid): refused for every stream of a rosetta scene, original untouched"""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); import hashlib
+    raw = open(os.path.join(ROS, '2026_room_base.rte'), 'rb').read(); names = sorted(cfb.CFB(raw).streams())
+    p = tmp_path / 'a.rte'; p.write_bytes(raw); h = hashlib.sha256(raw).hexdigest(); bad = []
+    for n in names:
+        c = cfb.CFB(raw); e = c.streams()[n]; nl = struct.unpack_from('<H', e.raw, 64)[0]; r = bytearray(e.raw); r[nl - 4:nl - 2] = (b'Z' if r[nl - 4] != 90 else b'Y') + b'\0'; e.raw = bytes(r)
+        o = str(tmp_path / 'o.rte'); cfb.write(c, o); new = open(o, 'rb').read(); assert sorted(cfb.CFB(new).streams()) != names, n
+        try: sg.save(sg.open_doc(str(p), None, cfg()), new, {'modified': ['stream:Partitions/none']}); bad.append(n)
+        except (sg.VerifyFailed, Exception) as ex:
+            if not isinstance(ex, sg.VerifyFailed): bad.append((n, type(ex).__name__))
+        assert hashlib.sha256(p.read_bytes()).hexdigest() == h, "ORIGINAL CHANGED after stream %s" % n
+        if bad: break
+    assert not bad, bad

@@ -294,6 +294,19 @@ def test_dwg_source_damage_lists_bad_object_crcs():
     assert DwgAdapter._crc_damage(M({3: b'ab'})) == ['obj:3: object CRC mismatch']
 
 
+def test_rvt_gzip_inflate_is_bounded_in_source_damage(monkeypatch):
+    """c4x-dwgreadfuzz: the gate inflated gzip members with no output limit (a bomb exhausts memory while judging the file). With a tiny cap the
+    sample's metadata streams must be reported, not inflated; with the normal cap the sample is clean."""
+    import savegate.adapters as AD
+    src = os.path.join(VGS, '2024_vg_worksets.rvt')
+    if not os.path.exists(src): pytest.skip('vg-scenes sample absent')
+    buf = open(src, 'rb').read(); ad = RvtAdapter()
+    assert ad.source_damage(buf) == []
+    monkeypatch.setattr(AD, 'GZ_CAP', 64)
+    dm = ad.source_damage(buf)
+    assert any('inflates to more than 64 bytes' in d for d in dm), dm[:3]
+
+
 ENOSPC_SCRIPT = r'''
 import sys, os
 sys.path.insert(0, {root!r})

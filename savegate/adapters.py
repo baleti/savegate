@@ -7,6 +7,9 @@ DWG_WRITABLE = ('AC1015', 'AC1018', 'AC1024', 'AC1027', 'AC1032')
 RVT_WRITABLE = ('2024', '2026')      # write-lab verified years; extend only with oracle evidence
 
 
+GZ_CAP = 1 << 30      # same bound as rvtw.GZ_CAP: largest plausible decompressed Revit stream
+
+
 def _h(b): return hashlib.sha1(b).hexdigest()
 
 
@@ -258,7 +261,9 @@ class RvtAdapter:
                 else:
                     i = P.find(rvtw.GZ)
                     if i < 0: continue
-                    do = zlib.decompressobj(-15); raw = do.decompress(P[i + 10:]); crc, isz = struct.unpack('<II', do.unused_data[:8])
+                    do = zlib.decompressobj(-15); raw = do.decompress(P[i + 10:], GZ_CAP + 1)     # c4x-dwgreadfuzz: bounded (a gzip bomb must not exhaust the gate's memory)
+                    if len(raw) > GZ_CAP: errs.append('%s: inflates to more than %d bytes (gzip bomb or damage)' % (n, GZ_CAP)); continue
+                    crc, isz = struct.unpack('<II', do.unused_data[:8])
                     if crc != zlib.crc32(raw) & 0xffffffff or isz != len(raw) & 0xffffffff: errs.append('%s: crc/size mismatch' % n)
             except Exception as ex: errs.append('%s: %s %s' % (n, type(ex).__name__, ex))
         return errs

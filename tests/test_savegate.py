@@ -258,6 +258,27 @@ def test_dwg_modify_undeclared_rejected(tmp_path):
     r = sg.save(doc, out, {'modified': [a]}); assert r.ok                 # declared edit passes
 
 
+def test_dwg_changed_object_with_bad_crc_is_refused():
+    """c4x-dwgreadfuzz: an object whose bytes differ from the source must carry a valid per-object CRC16; unchanged damaged objects stay tolerated.
+    Unit level with stub models (synthetic bytes)."""
+    sys.path.insert(0, DWGLIB)
+    import dwgfmt
+    from savegate.adapters import DwgAdapter
+    def good(body):
+        c = dwgfmt.crc16(body, 0xC0C1); return body + bytes([c & 255, c >> 8])
+    class O:
+        def __init__(s, t, raw): s.type = t; s.raw = raw
+    class M:
+        def __init__(s, raws): s.blocks = {}; s.objs = {h: O(19, r) for h, r in raws.items()}
+    a = DwgAdapter.__new__(DwgAdapter); a.owners = {}; a.bheaders = {}; a.dimobjs = {}; a.blockhs = set(); a.dims = set()
+    r1 = good(b'object one body'); r2 = good(b'object two body'); r2m = good(b'object two EDITED')
+    bad = bytearray(r2m); bad[3] ^= 1; bad = bytes(bad)
+    src = M({1: r1, 2: r2})
+    a._pair = (src, M({1: r1, 2: r2m})); assert a.extra_checks({'modified': [2]}) == []                 # valid new CRC
+    a._pair = (src, M({1: r1, 2: bad})); assert ('object_crc', 'obj:2') in a.extra_checks({'modified': [2]})   # damaged edit refused
+    dsrc = M({1: r1, 2: bad}); a._pair = (dsrc, M({1: r1, 2: bad})); assert a.extra_checks({}) == []   # pre-existing damage, unchanged: tolerated
+
+
 ENOSPC_SCRIPT = r'''
 import sys, os
 sys.path.insert(0, {root!r})
@@ -1076,3 +1097,14 @@ def test_save_through_symlink_updates_target_and_keeps_the_link(tmp_path):
         assert sg.save(doc, b'NEW', {'modified': ['file']}).ok
     assert os.path.islink(lnk), 'link was replaced by a regular file'
     assert open(p, 'rb').read() == b'NEW' and open(lnk, 'rb').read() == b'NEW'
+
+
+@pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
+def test_rvt_source_changed_after_open_is_a_conflict_even_with_same_size_and_mtime(tmp_path):
+    """c4x-rvtgap: RVT in-place save: another process flips one byte (size and mtime restored) after open; the save must raise Conflict and leave that file exactly as the other writer left it"""
+    p = str(tmp_path / 's.rte'); shutil.copy(os.path.join(ROS, '2024_roof_ceiling_base.rte'), p)
+    with sg.open_doc(p, RvtAdapter(), cfg()) as doc:
+        st = os.stat(p); b = bytearray(open(p, 'rb').read()); b[len(b) // 2] ^= 1
+        open(p, 'wb').write(bytes(b)); os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+        with pytest.raises(sg.Conflict): sg.save(doc, doc.buf, {'modified': []})
+    assert open(p, 'rb').read() == bytes(b) and not leftovers(tmp_path)

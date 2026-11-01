@@ -1285,3 +1285,14 @@ def test_rvt_gate_refuses_output_where_a_neighbour_element_lost_its_record_even_
     assert 'unresolved' in str(ei.value) or 'differences outside' in str(ei.value)
     assert p.read_bytes() == orig
     sg.save(sg.open_doc(str(p), None, cfg()), make(False), {'modified': ['stream:Partitions/423']})
+
+
+def test_hardlinked_target_is_refused_unless_allowed(tmp_path):
+    """c4x-rvtgap: in-place save of a file with a second hard link would detach that name (it keeps the OLD content); refused up front, original and link untouched; allow_hardlink_break permits it"""
+    p = mk(tmp_path); data = open(p, 'rb').read(); l = str(tmp_path / 'link.bin'); os.link(p, l)
+    with sg.open_doc(p, RawAdapter(), cfg()) as doc:
+        with pytest.raises(sg.HardlinkTarget): sg.save(doc, b'NEW' * 10, {'modified': ['file']})
+    assert open(p, 'rb').read() == data and open(l, 'rb').read() == data and os.stat(p).st_ino == os.stat(l).st_ino
+    c = cfg(); c.allow_hardlink_break = True
+    with sg.open_doc(p, RawAdapter(), c) as doc: sg.save(doc, b'NEW' * 10, {'modified': ['file']})
+    assert open(p, 'rb').read() == b'NEW' * 10 and open(l, 'rb').read() == data

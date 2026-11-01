@@ -19,6 +19,7 @@ class Config:
     gate_file: str = None             # default: <cache>/gate.json or $SAVEGATE_GATE
     journal_dir: str = None
     verify: bool = True
+    allow_hardlink_break: bool = False  # c4x-rvtgap: allow overwriting a file that has other hard links (the other names keep the old content)
     allow_readonly: bool = False      # overwrite a read-only target (the flag/mode is kept)
 
 
@@ -122,6 +123,9 @@ def save_as(doc, new_bytes, dest, manifest=None, overwrite=False, verify=None):
 
 
 def _check_writable_target(path, cfg):
+    try: nl = os.stat(long_path(path)).st_nlink
+    except OSError: nl = 1
+    if nl > 1 and not cfg.allow_hardlink_break: raise HardlinkTarget('%s has %d hard links: saving would detach the other names (they keep the old content); choose Save As or set allow_hardlink_break' % (path, nl))
     if not cfg.allow_readonly and os.path.exists(long_path(path)) and atomic.is_readonly(path):
         raise ReadOnlyTarget('%s is read-only: clear the flag, choose Save As, or set allow_readonly' % path)
 

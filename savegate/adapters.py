@@ -253,6 +253,12 @@ def _r2000_regions_changed(ms, mo):
         return None
 
 
+def _is_dim_block_ref(e):
+    """A dimension's geometry block: anonymous '*D<n>' OR a named block (c4x-dwgreadfuzz item 145: a real AC1032 dimension owns 'DIMBLOCK60-CCW07'; moving/copying it was refused with 20 'changes' in the block's entities)."""
+    br = e.get('block_ref') or ''
+    return br.startswith('*D') or (br != '' and str(e.get('kind', '')).startswith('DIM'))
+
+
 class _SkipRule(Exception): pass
 
 
@@ -279,9 +285,9 @@ class DwgAdapter:
             ent_handles.add(e['handle']); self.owners[e['handle']] = e.get('owner')
             if str(e.get('kind', '')).startswith(('INSERT', 'MINSERT')) and isinstance(e.get('block_handle'), int): self.bheaders[e['handle']] = e['block_handle']
         self.blockhs |= set(getattr(m, 'blocks', {}))   # block records own entities but are not entities: declaring one must not excuse all its entities
-        dimblk = {e['block_ref']: e['handle'] for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if hasattr(m, 'entities') else {}
+        dimblk = {e['block_ref']: e['handle'] for blk, e in m.entities() if _is_dim_block_ref(e)} if hasattr(m, 'entities') else {}
         self.dims = getattr(self, 'dims', set()) | set(dimblk.values())
-        bhmap = {e['handle']: e.get('block_handle') for blk, e in m.entities() if e.get('block_ref', '').startswith('*D')} if dimblk else {}
+        bhmap = {e['handle']: e.get('block_handle') for blk, e in m.entities() if _is_dim_block_ref(e)} if dimblk else {}
         for bn, dh in dimblk.items():   # the anonymous block's own objects: BLOCK_HEADER, BLOCK, ENDBLK (adjacent handles)
             bh = bhmap.get(dh)
             if isinstance(bh, int):

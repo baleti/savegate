@@ -311,3 +311,12 @@ def test_r2000_second_header_only_its_pointer_fields_and_crc_may_change():
         b = bytearray(a); b[base + 100] ^= 1; assert 'second header' in AD._r2000_regions_changed(M(a), M(bytes(b)))   # anything else
     finally:
         dwghdr.decode_header = saved
+
+
+def test_named_dimension_block_geometry_belongs_to_the_dimension():
+    import savegate.adapters as AD
+    assert AD._is_dim_block_ref({'block_ref': '*D5', 'kind': 'DIM_LINEAR'})
+    assert AD._is_dim_block_ref({'block_ref': 'DIMBLOCK60-CCW07', 'kind': 'DIM_LINEAR'})
+    assert not AD._is_dim_block_ref({'block_ref': 'DOOR', 'kind': 'INSERT'})          # an ordinary insert's block is not owned by the insert
+    assert not AD._is_dim_block_ref({'kind': 'DIM_LINEAR'})
+    assert not AD._is_dim_block_ref({'block_ref': '', 'kind': 'LINE'})

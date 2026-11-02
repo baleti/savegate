@@ -61,10 +61,18 @@ def _system_page_problems(buf, info):
     return out
 
 
+_PREVIEW_SENTINEL = bytes.fromhex('1f256d07d43628289d57ca3f9d44102b')
+
+
 def _preamble_snap(buf):
     """R2004+ files: bytes 0x00..0x7F of the file (version, maintenance, preview/summary/VBA seekers, codepage, security flags) have NO checksum and the reader ignores them,
     but the writer copies them verbatim (measured: no-edit rewrite of a real AC1032 keeps all 128 bytes). A save that alters them is a writer bug (c4x-dwgreadfuzz item 75b)."""
-    if bytes(buf[:6]) in (b'AC1018', b'AC1024', b'AC1027', b'AC1032'): return _h(bytes(buf[:0x80]))
+    if bytes(buf[:6]) in (b'AC1018', b'AC1024', b'AC1027', b'AC1032'):
+        # bytes 0x0D..0x10 = file address of the preview image: it moves with the file (measured on 2 real AC1032 no-edit rewrites: the writer repoints it and the new address holds
+        # the preview sentinel). Compare the pointer by what it points at, not by its value.
+        b = bytearray(buf[:0x80]); a = int.from_bytes(b[0x0D:0x11], 'little'); b[0x0D:0x11] = bytes(4)
+        ok = a == 0 or bytes(buf[a:a + 16]) == _PREVIEW_SENTINEL
+        return _h(bytes(b)) + (':preview-ok' if ok else ':preview-broken')
     return None
 
 

@@ -34,7 +34,7 @@ def test_preamble_invariants_and_truncation():
 def test_preamble_snapshot_changes_with_any_preamble_byte():
     from savegate.adapters import _preamble_snap
     a = bytes(make()); assert _preamble_snap(a) == _preamble_snap(bytes(a))
-    for off in (0x0B, 0x0D, 0x13, 0x20, 0x30, 0x7F):
+    for off in (0x0B, 0x13, 0x20, 0x30, 0x7F):
         b = bytearray(a); b[off] ^= 1
         assert _preamble_snap(bytes(b)) != _preamble_snap(a), off
     b = bytearray(a); b[0x80] ^= 1; assert _preamble_snap(bytes(b)) == _preamble_snap(a)   # encrypted block is covered by _header_problems, not this
@@ -108,3 +108,13 @@ def test_undeclared_bytes_rule_is_off_for_r2000_entity_chains():
     a = DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
     a._pair = (M({0x40: b'\x01\x40\x00\x00\x00'}, 'AC1015'), M({0x40: b'\x01\x40\x00\x00\x01'}, 'AC1015'))
     assert not [x for x in a.extra_checks({'added': [0x99]}) if x[0].startswith('undeclared')]
+
+
+def test_preview_pointer_may_move_but_must_hit_the_preview_sentinel():
+    from savegate.adapters import _preamble_snap, _PREVIEW_SENTINEL
+    def mk(addr, total=0x400):
+        b = bytearray(make()); b += bytes(total - len(b)); b[0x0D:0x11] = addr.to_bytes(4, 'little'); b[addr:addr + 16] = _PREVIEW_SENTINEL; return bytes(b)
+    a, c = mk(0x200), mk(0x300)
+    assert _preamble_snap(a) == _preamble_snap(c)                                   # moved, still valid
+    d = bytearray(c); d[0x300] ^= 1; assert _preamble_snap(bytes(d)) != _preamble_snap(a)     # points at garbage
+    e = bytearray(c); e[0x0D:0x11] = (0x350).to_bytes(4, 'little'); assert _preamble_snap(bytes(e)) != _preamble_snap(a)

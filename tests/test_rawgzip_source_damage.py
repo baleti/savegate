@@ -157,3 +157,19 @@ def test_element_snapshot_is_not_persisted_unless_asked(tmp_path, monkeypatch):
     assert len(calls) == 2 and not (tmp_path / 'xdg').exists()
     monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'c')); R._STAMP.clear()
     R.elements(b'abc'); R.elements(b'abc'); assert len(calls) == 3
+
+
+def test_edit_that_overflows_the_partition_raises_a_clear_error_and_writes_nothing(tmp_path):
+    """c4x-rvtgap: +60000 chars in a view name overflowed the last member of Partitions/67 and surfaced as IndexError from wlpart.cascade."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    wledit = pytest.importorskip('wledit')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    ed = wledit.Editor(src)
+    try: l = next(l for l in ed.trace(35)[3] if l[1] == 'DBView.m_viewName')
+    except Exception: pytest.skip('element 35 not a view in this sample')
+    o = str(tmp_path / 'o.rfa')
+    ed.set_string(35, l[1], l[4] + 'Z' * 60000, match=l[4])
+    try: ed.save(o)
+    except IndexError: pytest.fail('uncontrolled IndexError')
+    except ValueError as ex: assert 'capacity exceeded' in str(ex) and not os.path.exists(o)

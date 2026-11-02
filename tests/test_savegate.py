@@ -271,6 +271,7 @@ def test_dwg_changed_object_with_bad_crc_is_refused():
     class M:
         def __init__(s, raws): s.blocks = {}; s.objs = {h: O(19, r) for h, r in raws.items()}
     a = DwgAdapter.__new__(DwgAdapter); a.owners = {}; a.bheaders = {}; a.dimobjs = {}; a.blockhs = set(); a.dims = set()
+    a._handle_damage_one = lambda h, o: False      # stub objects have no embedded handle; that rule has its own test
     r1 = good(b'object one body'); r2 = good(b'object two body'); r2m = good(b'object two EDITED')
     bad = bytearray(r2m); bad[3] ^= 1; bad = bytes(bad)
     src = M({1: r1, 2: r2})

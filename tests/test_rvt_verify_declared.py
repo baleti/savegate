@@ -153,3 +153,12 @@ def test_four_chained_in_place_saves_on_the_2026_family(tmp_path):
         rvt_save.save_string_edits(cur, e, cfg)
     assert V.field_diff(src, cur, 7)[0] == []      # reverted to the original value
     V.verify_declared(src, cur, 0, {'SymbolInfo.m_name': 'LinearA'})
+
+
+def test_in_place_save_in_a_folder_and_file_name_with_spaces_and_non_ascii(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    d = tmp_path / 'Modèle façade 日本 (v2)'; d.mkdir(); cur = str(d / 'Plän 1 final.rfa'); shutil.copy(SRC, cur)
+    rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalU')], sg.Config(allow_overwrite=True, require_gate=False))
+    V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalU'})
+    assert 'Pl\u00e4n 1 final.rfa' in os.listdir(d) and not [n for n in os.listdir(d) if n.endswith('.sgtmp')]

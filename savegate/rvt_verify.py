@@ -28,6 +28,13 @@ class _LightModel:
 def _fields(path, eid, lib, only=None):
     for p in (lib, os.path.dirname(lib)):
         if p not in sys.path: sys.path.insert(0, p)
+    import rvt_decode
+    old = getattr(rvt_decode, 'LOGW', 60); rvt_decode.LOGW = 1 << 30      # long strings are compared in full, not on the 60-char log prefix
+    try: return _fields2(path, eid, lib, only)
+    finally: rvt_decode.LOGW = old
+
+
+def _fields2(path, eid, lib, only):
     m = _LightModel(path, only)
     recs = list(m.find(eid))
     if not recs: raise ValueError('element %s has no decodable record in %s' % (eid, path))      # the editor edits the first one (which=0), so does this

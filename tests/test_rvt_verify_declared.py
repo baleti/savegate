@@ -351,3 +351,15 @@ def test_save_as_into_a_read_only_directory_fails_cleanly(tmp_path):
             rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], sg.Config(allow_overwrite=False, require_gate=False), dest=str(ro / 'o.rfa'))
         assert os.listdir(ro) == []
     finally: os.chmod(ro, 0o700)
+
+
+def test_long_string_edit_is_verified_in_full_not_on_the_60_char_log_prefix(tmp_path):
+    """before the fix the decoder log cut values at 60 chars: every edit longer than 60 chars was refused (wrong value). Now accepted and compared in full."""
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); val = ('0123456789' * 40)
+    rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', val)], sg.Config(allow_overwrite=True, require_gate=False))
+    V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': val})
+    tail_wrong = val[:300] + 'Z' + val[301:]      # differs only after char 60
+    with pytest.raises(ValueError):
+        V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': tail_wrong})

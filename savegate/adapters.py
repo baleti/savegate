@@ -442,6 +442,7 @@ class RvtAdapter:
                 self._unres_hist = (getattr(self, '_unres_hist', [])[-1:]) + [ur]; self._ids_hist = (getattr(self, '_ids_hist', [])[-1:]) + [set(ids)]      # c4x-rvtgap: an ElemTable id without a framed record (neighbour eaten by a bad edit) changes this key -> refused unless declared
             except ImportError: pass
             except Exception as ex: raise VerifyFailed('id-resolution check failed (%s: %s)' % (type(ex).__name__, str(ex)[:120]))
+        self._buf_hist = (getattr(self, '_buf_hist', [])[-1:]) + [buf]      # c4x-rvtgap: source+output bytes for manifest['expect'] (verify_declared)
         self._keys = set(out)
         self._mem_hist = (getattr(self, '_mem_hist', [])[-1:]) + [self._member_hashes(c)]     # [source, output] of the current verify
         self._blk_hist = (getattr(self, '_blk_hist', [])[-1:]) + [self._block_hashes(c)]
@@ -497,11 +498,29 @@ class RvtAdapter:
             if span > self.SPAN_MAX * nd: bad.append(('span_changed', '%s: changed window ~%d bytes for %d declared elements' % (n, span, nd)))
         return bad
 
+    def _expect_checks(self, manifest):
+        """c4x-rvtgap: manifest['expect'] = {element id: {field name: new value}}: the declared element must differ from the source in exactly these fields (a flip inside the declared record is invisible to every other rule)"""
+        ex = manifest.get('expect'); bh = getattr(self, '_buf_hist', [])
+        if not ex: return []
+        if len(bh) < 2: return [('expect_unverifiable', 'expected field values were given but source and output bytes are not both available')]
+        import tempfile
+        from . import rvt_verify
+        bad = []
+        with tempfile.TemporaryDirectory() as d:
+            a = os.path.join(d, 'a.rvt'); b = os.path.join(d, 'b.rvt')
+            open(a, 'wb').write(bh[0]); open(b, 'wb').write(bh[1])
+            for eid, fields in ex.items():
+                try: rvt_verify.verify_declared(a, b, int(str(eid).split(':')[-1]), fields)
+                except Exception as e: bad.append(('declared_element_mismatch', '%s: %s' % (type(e).__name__, str(e)[:200])))
+        return bad
+
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""
         meta = [k for k in manifest.get('modified', ()) if str(k).split(':', 1)[-1] in rvtw_META and not os.environ.get('SAVEGATE_RVT_ALLOW_META')]
         if meta: return [('metadata_stream_declared', '%s: file metadata streams (version/build/worksharing, thumbnail, transmission data) carry no integrity data and no edit needs them; a flip there passed the gate when declared' % ', '.join(map(str, meta)))]
+        exp = self._expect_checks(manifest)
+        if exp: return exp
         h = getattr(self, '_mem_hist', [])
         if len(h) < 2 or not h[0]: return []      # c4x-rvtgap: an EMPTY output map is no reason to skip (all partitions vanished)
         bad = self.span_checks(manifest)

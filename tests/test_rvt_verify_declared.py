@@ -29,3 +29,16 @@ def test_flip_inside_the_declared_record_is_caught(tmp_path):
     except ValueError: return
     except Exception: return      # undecodable after the flip is also a refusal
     pytest.fail('a bit flip inside the declared record passed verify_declared')
+
+
+def _gate(tmp_path, expect):
+    import savegate as sg
+    cur = str(tmp_path / 'cur.rfa'); shutil.copy(SRC, cur)
+    man = {'modified': ['stream:Partitions/67', 'el:0'], 'expect': expect}
+    return sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(GEN1, 'rb').read(), man)
+
+
+def test_gate_manifest_expect_accepts_the_intended_value_and_refuses_another(tmp_path):
+    import savegate as sg
+    _gate(tmp_path, {0: {'SymbolInfo.m_name': 'LinearXY'}})
+    with pytest.raises(sg.VerifyFailed): _gate(tmp_path, {0: {'SymbolInfo.m_name': 'Linear2'}})

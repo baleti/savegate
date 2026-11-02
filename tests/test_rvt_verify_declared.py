@@ -230,3 +230,14 @@ def test_save_as_with_edit_of_a_damaged_source_is_refused_unless_allowed(tmp_pat
     with pytest.raises(sg.SaveError):
         sg.save_as(doc, bytes(edited), dest, {})
     assert not os.path.exists(dest) and open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('how', ['truncate1', 'truncate_sector', 'trailing_zero_sector', 'trailing_junk'])
+def test_truncated_or_padded_output_is_refused_by_the_gate(tmp_path, how):
+    import savegate as sg
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur); src = open(cur, 'rb').read()
+    out = {'truncate1': src[:-1], 'truncate_sector': src[:-512], 'trailing_zero_sector': src + b'\0' * 512, 'trailing_junk': src + b'JUNK' * 128}[how]
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)); dest = str(tmp_path / 'o.rfa')
+    with pytest.raises(sg.SaveError):
+        sg.save_as(doc, out, dest, {})
+    assert not os.path.exists(dest) and open(cur, 'rb').read() == src

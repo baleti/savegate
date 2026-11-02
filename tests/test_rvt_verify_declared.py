@@ -498,3 +498,34 @@ def test_directory_entry_metadata_changes_in_the_output_are_reported_not_hidden(
     print('DIRMETA', field, verdict)
     assert verdict.startswith('REFUSED') or field in ('ctime', 'mtime')
     assert open(cur, 'rb').read() == before or verdict == 'ACCEPTED'
+
+
+@pytest.mark.parametrize('mode', ['crosslink', 'loop', 'free_in_chain', 'shared_start'])
+def test_fat_chain_damage_in_an_otherwise_valid_output_is_refused(tmp_path, mode):
+    import savegate as sg, struct
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    buf = bytearray(_edited_bytes(SRC, 7, 'HorizontalZ')); c = cfb.CFB(bytes(buf)); ss = c.ss
+    fat_ids = [x for x in struct.unpack('<109I', buf[76:76 + 436]) if x != 0xFFFFFFFF]
+    st = c.streams(); big = [e for e in st.values() if e.size >= c.cutoff]
+    a, b = big[0], big[1]
+    def put(sid, val):      # FAT entry sid -> val
+        sec = fat_ids[sid // (ss // 4)]; off = (sec + 1) * ss + (sid % (ss // 4)) * 4; buf[off:off + 4] = struct.pack('<I', val)
+    nxt = c.fat[a.start]; assert nxt != 0xFFFFFFFE, 'chain too short'
+    if mode == 'crosslink': put(a.start, b.start)
+    elif mode == 'loop': put(nxt, a.start)
+    elif mode == 'free_in_chain': put(a.start, 0xFFFFFFFF)
+    else:
+        i = [k for k, e in enumerate(c.entries) if e.type == 2 and e is b][0]
+        # directory entry of b starts where a does
+        dirbuf = cfb.CFB(bytes(buf))  # layout lookup
+        dstart = struct.unpack('<I', buf[48:52])[0]; per = ss // 128
+        sec = dstart
+        for _ in range(i // per): sec = c.fat[sec]
+        o = (sec + 1) * ss + (i % per) * 128 + 116; buf[o:o + 4] = struct.pack('<I', a.start)
+    out = tmp_path / 'x.rfa'; out.write_bytes(bytes(buf))
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(Exception) as ei:
+        sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+    print('FAT', mode, type(ei.value).__name__, str(ei.value)[:110])
+    assert open(cur, 'rb').read() == before

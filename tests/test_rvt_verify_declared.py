@@ -283,3 +283,17 @@ def test_save_as_onto_the_source_by_another_spelling_never_bypasses_the_overwrit
     try: rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], cfg, dest=dest)
     except sg.SaveError: pass
     assert open(cur, 'rb').read() == before, 'Save As reached the source through %s while overwrite is OFF' % spell
+
+
+def test_batch_with_one_invalid_edit_writes_nothing_all_or_none(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read(); cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    bad = [[(0, 'SymbolInfo.m_name', 'LinearQ'), (7, 'FillPattern.m_name', 'lone\ud800')],           # unencodable value
+           [(0, 'SymbolInfo.m_name', 'LinearQ'), (7, 'NoSuch.field', 'x')],                         # unknown field
+           [(0, 'SymbolInfo.m_name', 'LinearQ'), (99999999, 'FillPattern.m_name', 'x')]]            # unknown element id
+    for edits in bad:
+        with pytest.raises(Exception):
+            rvt_save.save_string_edits(cur, edits, cfg)
+        assert open(cur, 'rb').read() == before, 'a partial batch reached the file: %r' % (edits,)
+        assert os.listdir(tmp_path) == ['c.rfa']

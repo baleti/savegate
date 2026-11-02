@@ -289,7 +289,15 @@ def test_r2000_second_header_only_its_pointer_fields_and_crc_may_change():
         c = dwgfmt.crc16(bytes(hv[16:50]), 0xC0C1); hv[50:52] = struct.pack('<H', c)
         locs = 0x19 + 9 * 5 + 2
         b = bytearray(locs) + b'P' * 8
-        o0 = len(b); b += hv; o1 = len(b); b += b'C' * 20; o2 = len(b); b += b'M' * 30; o4 = len(b) ; b += gap; o4 = len(b); b += b'\0' * 4
+        o0 = len(b); b += hv; o1 = len(b); b += b'C' * 20; o2 = len(b); b += b'M' * 30; g0 = len(b)
+        gap = bytearray(gap)
+        def put32(pbit, v):
+            for k in range(32):
+                bit = (v >> (8 * (k // 8) + 7 - (k % 8))) & 1; pos = pbit + k
+                if bit: gap[pos >> 3] |= 0x80 >> (pos & 7)
+                else: gap[pos >> 3] &= ~(0x80 >> (pos & 7)) & 0xFF
+        for pb, v in ((162, g0), (352, o0), (386, len(hv)), (428, o1), (462, 20), (504, o2), (538, 30)): put32(pb, v)
+        b += gap; o4 = len(b); b += b'\0' * 4
         b[:6] = b'AC1015'; struct.pack_into('<I', b, 0x15, 5)
         for i, (n, s_, z) in enumerate([(0, o0, len(hv)), (1, o1, 20), (2, o2, 30), (3, 0, 0), (4, o4, 4)]): struct.pack_into('<BII', b, 0x19 + 9 * i, n, s_, z)
         return bytes(b)
@@ -299,7 +307,7 @@ def test_r2000_second_header_only_its_pointer_fields_and_crc_may_change():
     try:
         base = len(a) - 4 - len(gap)
         assert AD._r2000_regions_changed(M(a), M(a)) == []
-        b = bytearray(a); b[base + 162 // 8 + 1] ^= 1; assert AD._r2000_regions_changed(M(a), M(bytes(b))) == []      # a pointer field
+        b = bytearray(a); b[base + 162 // 8 + 1] ^= 1; assert 'second header pointers' in AD._r2000_regions_changed(M(a), M(bytes(b)))      # a pointer field that no longer matches the locator table
         b = bytearray(a); b[base + 100] ^= 1; assert 'second header' in AD._r2000_regions_changed(M(a), M(bytes(b)))   # anything else
     finally:
         dwghdr.decode_header = saved

@@ -241,7 +241,10 @@ def _r2000_regions_changed(ms, mo):
         if len(da) != len(db): out.append('header variables size')
         else:
             sp = dwghdr.decode_header(bytes(a[la[0][0]:la[0][0] + la[0][1]]), 'AC1015', 160).get('_seedpos')
-            if sp is None: return out or None
+            if sp is None:   # HANDSEED not decodable (7 of 112 local AC1015 files, item 142): the writer refuses to change such a header, so ANY change (but the section CRC) is damage
+                szh = int.from_bytes(bytes(a[la[0][0] + 16:la[0][0] + 20]), 'little')
+                if any(da[i] != db[i] for i in range(len(da)) if not (szh <= i < szh + 2)): out.append('header variables (seed not decodable)')
+                return out
             # da starts after the 20-byte sentinel+size prefix in this reader; _seedpos is relative to the section incl. prefix (start=160 bits = 20 bytes)
             bad = [i for i in range(len(da)) if da[i] != db[i] and not (sp // 8 - 20 <= i <= sp // 8 - 20 + 10)]
             if bad: out.append('header variables')

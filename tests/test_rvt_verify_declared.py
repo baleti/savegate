@@ -71,3 +71,15 @@ def test_gate_clone_with_expect_accepts_true_clone_source_and_refuses_wrong_one(
         return sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(CLONE, 'rb').read(), man)
     run(2)
     with pytest.raises(sg.VerifyFailed): run(3)
+
+
+def test_gate_two_element_edit_with_expect(tmp_path):
+    import savegate as sg, wledit
+    ed = wledit.Editor(SRC)
+    ed.set_strings([(0, 'SymbolInfo.m_name', 'LinearXY'), (7, 'FillPattern.m_name', 'HorizontalX')])
+    out = str(tmp_path / 'o.rfa'); ed.save(out); b = open(out, 'rb').read()
+    def run(ex):
+        cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur)
+        return sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), b, {'modified': ['stream:Partitions/67', 'el:0', 'el:7'], 'expect': ex})
+    run({0: {'SymbolInfo.m_name': 'LinearXY'}, 7: {'FillPattern.m_name': 'HorizontalX'}})
+    with pytest.raises(sg.VerifyFailed): run({0: {'SymbolInfo.m_name': 'LinearXY'}, 7: {'FillPattern.m_name': 'Horizontal2'}})

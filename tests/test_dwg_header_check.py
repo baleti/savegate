@@ -247,3 +247,31 @@ def test_unreferenced_bytes_behind_the_encrypted_header_block_are_part_of_the_pr
     for off in (0xEC, 0xF5, 0xFF):
         b = bytearray(a); b[off] ^= 4; assert _preamble_snap(bytes(b)) != _preamble_snap(a), hex(off)
     b = bytearray(a); b[0x100] ^= 4; assert _preamble_snap(bytes(b)) == _preamble_snap(a)
+
+
+def test_r2000_regions_outside_the_objects_must_not_change():
+    import struct, savegate.adapters as AD
+    AD.DwgAdapter()
+    import dwgfmt, dwghdr
+    class M:
+        def __init__(s, buf): s.version = 'AC1015'; s._buf = buf
+    def build(pre=b'P' * 40, cls=b'C' * 30, hvars=None):
+        hv = hvars or (bytes(16) + struct.pack('<I', 30) + bytes(range(30)) + b'\0\0')
+        hv = bytearray(hv); c = dwgfmt.crc16(bytes(hv[16:20 + 30]), 0xC0C1); hv[50:52] = struct.pack('<H', c)
+        locs = 0x19 + 9 * 2 + 2
+        b = bytearray(locs) + pre
+        o0 = len(b); b += hv; o1 = len(b); b += cls
+        b[:6] = b'AC1015'; struct.pack_into('<I', b, 0x15, 2)
+        struct.pack_into('<BII', b, 0x19, 0, o0, len(hv)); struct.pack_into('<BII', b, 0x19 + 9, 1, o1, len(cls))
+        return bytes(b)
+    a = build()
+    saved = dwghdr.decode_header
+    dwghdr.decode_header = lambda h, v, s=0: {'_seedpos': (20 + 10) * 8}      # HANDSEED at section byte 30 -> data index 10
+    try:
+        assert AD._r2000_regions_changed(M(a), M(a)) == []
+        b = bytearray(a); b[0x19 + 9 * 2 + 2 + 5] ^= 1; assert 'pre-header area' in AD._r2000_regions_changed(M(a), M(bytes(b)))
+        b = bytearray(a); b[-3] ^= 1; assert 'classes section' in AD._r2000_regions_changed(M(a), M(bytes(b)))
+        b = bytearray(a); b[0x0B] ^= 1; assert 'file header' in AD._r2000_regions_changed(M(a), M(bytes(b)))
+        b = bytearray(a); b[0x0D] ^= 1; assert AD._r2000_regions_changed(M(a), M(bytes(b))) == []                       # image seeker may move
+    finally:
+        dwghdr.decode_header = saved

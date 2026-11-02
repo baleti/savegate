@@ -199,6 +199,36 @@ def _page_padding_nonzero(m):
         return None
 
 
+def _r2000_regions_changed(ms, mo):
+    """AC1015 (R2000) has no section pages: the gate checked nothing outside the objects there (c4x-dwgreadfuzz item 136: 42 of 300 random bit flips in a real AC1015 writer
+    output were ACCEPTED: 34 in the pre-header area (preview image etc.), 4 in the classes section, 3 in the header-variables section, 1 in the locator area).
+    Output must equal the source in: the 25-byte file header (except the image seeker at 0x0D), everything between the locator table and the header-variables section,
+    the classes section, and the header-variables section except the HANDSEED field (<= 10 bytes) and its CRC. Returns names of changed regions, None if n/a."""
+    try:
+        import struct, dwgfmt as F, dwghdr
+        if ms.version != 'AC1015' or mo.version != 'AC1015': return None
+        a, b = ms._buf, mo._buf
+        ha, hb = F.read_r13_r2000(a), F.read_r13_r2000(b)
+        la = {n: (s_, z) for n, s_, z in ha['locators']}; lb = {n: (s_, z) for n, s_, z in hb['locators']}
+        out = []
+        if bytes(a[:0x0D]) + bytes(a[0x11:0x19]) != bytes(b[:0x0D]) + bytes(b[0x11:0x19]): out.append('file header')
+        ta = 0x19 + 9 * len(ha['locators']) + 2; tb = 0x19 + 9 * len(hb['locators']) + 2
+        if ta != tb or bytes(a[ta:la[0][0]]) != bytes(b[tb:lb[0][0]]): out.append('pre-header area')
+        if 1 not in la or 1 not in lb or la[1][1] != lb[1][1] or bytes(a[la[1][0]:la[1][0] + la[1][1]]) != bytes(b[lb[1][0]:lb[1][0] + lb[1][1]]): out.append('classes section')
+        da, ok_a, _ = F.section_r13_r2000(a, (0,) + la[0]); db, ok_b, _ = F.section_r13_r2000(b, (0,) + lb[0])
+        if ok_a and not ok_b: out.append('header variables CRC')
+        if len(da) != len(db): out.append('header variables size')
+        else:
+            sp = dwghdr.decode_header(bytes(a[la[0][0]:la[0][0] + la[0][1]]), 'AC1015', 160).get('_seedpos')
+            if sp is None: return out or None
+            # da starts after the 20-byte sentinel+size prefix in this reader; _seedpos is relative to the section incl. prefix (start=160 bits = 20 bytes)
+            bad = [i for i in range(len(da)) if da[i] != db[i] and not (sp // 8 - 20 <= i <= sp // 8 - 20 + 10)]
+            if bad: out.append('header variables')
+        return out
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -365,6 +395,7 @@ class DwgAdapter:
         except ImportError:
             pass
         for nm_ in (_other_sections_changed(ms, mo) or [])[:5]: bad.append(('section_changed', nm_))
+        for nm_ in (_r2000_regions_changed(ms, mo) or [])[:5]: bad.append(('r2000_region_changed', nm_))
         for n_ in (_page_padding_nonzero(mo) or [])[:5]: bad.append(('page_padding', 'page:%d' % n_))
         pv_ = _preview_changed(ms, mo)
         if pv_: bad.append(('preview_changed', 'pv:%d' % pv_[0]))

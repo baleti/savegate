@@ -104,6 +104,9 @@ _DWG_NAMES = {'AC1006': 'R10', 'AC1009': 'R11/R12', 'AC1012': 'R13', 'AC1014': '
 _SUBENT = {2, 6, 10, 11, 12, 13, 14, 15}   # ATTRIB, SEQEND, VERTEX kinds
 
 
+class _SkipRule(Exception): pass
+
+
 class DwgAdapter:
     name = 'dwg'
     def __init__(self, lib=None):
@@ -270,12 +273,15 @@ class DwgAdapter:
         # three visual-style flag bits of common_entity) is invisible to it (5/295 CRC-fixed LINE flips accepted by every check). An object that is not declared
         # (modified/added/side effect) must therefore be byte-identical to the source.
         try:
+            if getattr(mo, 'version', 'AC1018') <= 'AC1015': raise _SkipRule()   # R2000 links entities in a chain: adding one rewrites its neighbours' bytes (2/5 AC1015 add-line saves refused in the false-positive sweep)
             mod_, add_, dele_ = self.expand(manifest); decl_ = mod_ | add_ | dele_ | self.side_effects(manifest)
             for h, o in ms.objs.items():
                 p = mo.objs.get(h)
                 if p is None or p.raw == o.raw: continue
                 if 'obj:%x' % h in decl_ or 'ent:%x' % h in decl_: continue
                 bad.append(('undeclared_object_bytes', 'obj:%x' % h))
+        except _SkipRule:
+            pass
         except Exception as e:
             bad.append(('undeclared_check_failed', str(e)[:60]))
         # a block record that stops being listed turns every entity it owns into an orphan that no reader walks (entities silently vanish; c8-perf 2026-10-30):

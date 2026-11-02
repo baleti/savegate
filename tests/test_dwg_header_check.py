@@ -97,3 +97,14 @@ def test_undeclared_object_with_changed_bytes_is_refused_even_if_it_decodes_the_
     r = a.extra_checks({'modified': []})
     assert ('undeclared_object_bytes', 'obj:40') in r
     assert ('undeclared_object_bytes', 'obj:40') not in a.extra_checks({'modified': [0x40]})
+
+
+def test_undeclared_bytes_rule_is_off_for_r2000_entity_chains():
+    from savegate.adapters import DwgAdapter
+    class O:
+        def __init__(s, raw): s.raw = raw; s.type = 19; s.data_bit = 0
+    class M:
+        def __init__(s, raws, v): s.version = v; s.objs = {h: O(r) for h, r in raws.items()}; s.blocks = {}
+    a = DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
+    a._pair = (M({0x40: b'\x01\x40\x00\x00\x00'}, 'AC1015'), M({0x40: b'\x01\x40\x00\x00\x01'}, 'AC1015'))
+    assert not [x for x in a.extra_checks({'added': [0x99]}) if x[0].startswith('undeclared')]

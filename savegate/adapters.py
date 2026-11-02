@@ -160,6 +160,26 @@ def _other_sections_changed(ms, mo):
         return None
 
 
+def _preview_changed(ms, mo):
+    """AcDb:Preview may differ between source and output ONLY in the 4-byte 'start address' of each image entry (entries: code RC, start RL, size RL after the 16-byte
+    sentinel, 4-byte size and 1-byte count); the writer rebases them (c4x-dwgreadfuzz item 110: offsets 22-24 and 31-33). Returns differing offsets outside those, [] if fine, None if n/a."""
+    try:
+        import dwgfmt as F
+        if ms.version not in ('AC1018', 'AC1024', 'AC1027', 'AC1032') or mo.version != ms.version: return None
+        if 'AcDb:Preview' not in ms._info['sections'] and 'AcDb:Preview' not in mo._info['sections']: return None
+        a = F.r2004_section_data(ms._buf, ms._info, 'AcDb:Preview') if 'AcDb:Preview' in ms._info['sections'] else None
+        b = F.r2004_section_data(mo._buf, mo._info, 'AcDb:Preview') if 'AcDb:Preview' in mo._info['sections'] else None
+        if a is None or b is None: return [-1]
+        if len(a) != len(b): return [-2]
+        n = a[20] if len(a) > 20 else 0; ok = set()
+        for i in range(n):
+            st = 21 + 9 * i + 1
+            ok |= set(range(st, st + 4))
+        return [i for i in range(len(a)) if a[i] != b[i] and i not in ok]
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -326,6 +346,8 @@ class DwgAdapter:
         except ImportError:
             pass
         for nm_ in (_other_sections_changed(ms, mo) or [])[:5]: bad.append(('section_changed', nm_))
+        pv_ = _preview_changed(ms, mo)
+        if pv_: bad.append(('preview_changed', 'pv:%d' % pv_[0]))
         hd_ = _header_section_diff(ms, mo)
         if hd_: bad.append(('header_section_bytes', 'hdr:%d' % hd_[0]))
         okm = _header_section_crc_ok(mo)

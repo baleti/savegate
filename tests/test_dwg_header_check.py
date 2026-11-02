@@ -178,3 +178,22 @@ def test_sections_other_than_header_objects_handles_preview_must_be_carried_verb
         assert AD._other_sections_changed(M(names, 's'), M(names[:-1], 'o')) == ['AcDb:AppInfo', 'AcDb:Classes']
     finally:
         dwgfmt.r2004_section_data = saved
+
+
+def test_preview_section_may_only_change_its_image_start_addresses():
+    import savegate.adapters as AD
+    AD.DwgAdapter()
+    import dwgfmt
+    class M:
+        def __init__(s, tag): s.version = 'AC1032'; s._buf = tag; s._info = {'sections': {'AcDb:Preview': 1}}
+    a = bytearray(60); a[20] = 2                      # two entries: code@21 start@22..25 size@26..29, code@30 start@31..34
+    saved = dwgfmt.r2004_section_data
+    try:
+        cur = {'s': bytes(a), 'o': bytes(a)}
+        dwgfmt.r2004_section_data = lambda buf, info, nm: cur[buf]
+        assert AD._preview_changed(M('s'), M('o')) == []
+        b = bytearray(a); b[22] = 9; b[33] = 9; cur['o'] = bytes(b); assert AD._preview_changed(M('s'), M('o')) == []
+        b = bytearray(a); b[26] = 9; cur['o'] = bytes(b); assert AD._preview_changed(M('s'), M('o')) == [26]     # size field
+        b = bytearray(a); b[40] = 1; cur['o'] = bytes(b); assert AD._preview_changed(M('s'), M('o')) == [40]     # image data
+    finally:
+        dwgfmt.r2004_section_data = saved

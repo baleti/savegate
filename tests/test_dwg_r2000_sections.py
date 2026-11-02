@@ -37,6 +37,14 @@ class R2000Sections(unittest.TestCase):
                 self.assertTrue(prob(bytes(m)), (base, off)); n += 1
         self.assertGreater(n, 100)
 
+    def test_lib_without_reader_functions_fails_closed(self):
+        import types
+        real = sys.modules['dwgfmt']
+        sys.modules['dwgfmt'] = types.ModuleType('dwgfmt')
+        try: r = prob(build()[0])
+        finally: sys.modules['dwgfmt'] = real
+        self.assertTrue(r and 'unreadable' in r[0], r)
+
     def test_other_versions_ignored(self):
         self.assertEqual(prob(b'AC1032' + bytes(100)), [])
 

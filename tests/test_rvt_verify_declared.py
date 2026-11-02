@@ -254,3 +254,17 @@ def test_control_and_odd_characters_in_an_edit_are_saved_exactly_or_refused_with
         assert open(cur, 'rb').read() == before, 'refused (%s) but the original changed' % type(e).__name__
         return
     V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': val})      # accepted: must read back exactly
+
+
+@pytest.mark.parametrize('content', [b'', b'not an ole file at all', b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1' + b'\0' * 100, open(SRC, 'rb').read()[:4096]])
+def test_empty_or_non_ole_source_is_never_saved_over_or_changed(tmp_path, content):
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'x.rfa'); open(cur, 'wb').write(content); cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    with pytest.raises(Exception):
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'Z')], cfg)
+    assert open(cur, 'rb').read() == content
+    assert os.listdir(tmp_path) == ['x.rfa'], os.listdir(tmp_path)      # no temp/backup debris
+    with pytest.raises(Exception):
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'Z')], cfg, dest=str(tmp_path / 'o.rfa'))
+    assert not os.path.exists(str(tmp_path / 'o.rfa'))

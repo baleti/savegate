@@ -225,7 +225,7 @@ class DwgAdapter:
         return 'ok %s %d objects' % (m.version, len(m.objs))
 
 
-rvtw_META = {'BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData', 'ProjectInformation', 'PartAtom'}
+rvtw_META = {'Formats/Latest', 'BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData', 'ProjectInformation', 'PartAtom'}
 
 
 class RvtAdapter:

@@ -119,7 +119,7 @@ def test_junk_after_the_gzip_member_of_a_declared_global_stream_is_refused(tmp_p
     ok = str(tmp_path / 'ok.rfa'); cfb.write(cfb.CFB(raw), ok); assert A.validate(open(ok, 'rb').read())
 
 
-@pytest.mark.parametrize('st', ['BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData'])
+@pytest.mark.parametrize('st', ['BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData', 'Formats/Latest'])
 def test_declared_metadata_stream_change_is_refused(st, tmp_path):
     """c4x-rvtgap: a flipped byte in a plain metadata stream, declared modified, was ACCEPTED (no ECC/CRC to catch it)."""
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))

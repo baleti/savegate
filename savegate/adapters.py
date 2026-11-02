@@ -142,6 +142,24 @@ def _header_section_diff(ms, mo):
         return None
 
 
+def _other_sections_changed(ms, mo):
+    """Names of R2004-family sections other than Header, Objects, Handles, Preview whose decoded data differ between source and output (Classes, AppInfo, SummaryInfo,
+    FileDepList, Template, RevHistory, AppInfoHistory...). The writer carries them verbatim (c4x-dwgreadfuzz item 110: 66/66 files); no snapshot key covered them. None if n/a."""
+    try:
+        import dwgfmt as F
+        if ms.version not in ('AC1018', 'AC1024', 'AC1027', 'AC1032') or mo.version != ms.version: return None
+        skip = {'AcDb:Header', 'AcDb:AcDbObjects', 'AcDb:Handles', 'AcDb:Preview'}
+        out = []
+        for nm in sorted(set(ms._info['sections']) | set(mo._info['sections'])):
+            if nm in skip: continue
+            a = F.r2004_section_data(ms._buf, ms._info, nm) if nm in ms._info['sections'] else None
+            b = F.r2004_section_data(mo._buf, mo._info, nm) if nm in mo._info['sections'] else None
+            if a != b: out.append(nm)
+        return out
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -307,6 +325,7 @@ class DwgAdapter:
                 if self._handle_damage_one(h, o): bad.append(('embedded_handle', 'obj:%x' % h))
         except ImportError:
             pass
+        for nm_ in (_other_sections_changed(ms, mo) or [])[:5]: bad.append(('section_changed', nm_))
         hd_ = _header_section_diff(ms, mo)
         if hd_: bad.append(('header_section_bytes', 'hdr:%d' % hd_[0]))
         okm = _header_section_crc_ok(mo)

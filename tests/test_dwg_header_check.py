@@ -159,3 +159,22 @@ def test_header_section_may_only_change_in_the_seed_field_and_crc():
         b = bytearray(a); b[300] ^= 1; assert diff(a, b) == [300]                 # undecoded tail bit
     finally:
         dwgfmt.r2004_section_data, dwghdr.header_vars = saved
+
+
+def test_sections_other_than_header_objects_handles_preview_must_be_carried_verbatim():
+    import savegate.adapters as AD
+    AD.DwgAdapter()
+    import dwgfmt
+    class M:
+        def __init__(s, names, tag): s.version = 'AC1032'; s._buf = tag; s._info = {'sections': {n: 1 for n in names}}
+    names = ['AcDb:Header', 'AcDb:AcDbObjects', 'AcDb:Handles', 'AcDb:Preview', 'AcDb:Classes', 'AcDb:AppInfo']
+    saved = dwgfmt.r2004_section_data
+    try:
+        data = {('s', 'AcDb:Classes'): b'abc', ('o', 'AcDb:Classes'): b'abc', ('s', 'AcDb:AppInfo'): b'x', ('o', 'AcDb:AppInfo'): b'x'}
+        dwgfmt.r2004_section_data = lambda buf, info, nm: data.get((buf, nm), b'-')
+        assert AD._other_sections_changed(M(names, 's'), M(names, 'o')) == []
+        data[('o', 'AcDb:Classes')] = b'abd'
+        assert AD._other_sections_changed(M(names, 's'), M(names, 'o')) == ['AcDb:Classes']
+        assert AD._other_sections_changed(M(names, 's'), M(names[:-1], 'o')) == ['AcDb:AppInfo', 'AcDb:Classes']
+    finally:
+        dwgfmt.r2004_section_data = saved

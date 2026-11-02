@@ -441,3 +441,19 @@ def test_flip_in_the_edited_partition_outside_the_declared_record_is_refused(tmp
     with pytest.raises(sg.SaveError):
         sg.save(doc, g.read_bytes(), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
     assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('pair', [('Global/History', 'Global/ContentDocuments'), ('Global/Latest', 'Formats/Latest'), ('Global/ElemTable', 'Global/PartitionTable'), ('BasicFileInfo', 'PartAtom')])
+def test_two_streams_with_swapped_contents_in_an_otherwise_valid_output_are_refused(tmp_path, pair):
+    import savegate as sg
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    c = cfb.CFB(_edited_bytes(SRC, 7, 'HorizontalZ')); st = c.streams(); a, b = st[pair[0]], st[pair[1]]
+    da, db = bytes(a.data), bytes(b.data); assert da != db
+    a.data, b.data = db, da
+    out = str(tmp_path / 'sw.rfa'); cfb.write(c, out)
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    for mod in (['stream:Partitions/67', 'el:7'], ['stream:Partitions/67', 'el:7'] + ['stream:' + p for p in pair]):
+        with pytest.raises(sg.SaveError):
+            sg.save(doc, open(out, 'rb').read(), {'modified': mod, 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+        assert open(cur, 'rb').read() == before

@@ -60,3 +60,14 @@ CLONE = os.path.expanduser('~/demo-state/oracle-files/c4x_2026_construction_temp
 def test_verify_new_accepts_the_real_clone_and_refuses_a_wrong_clone_source():
     assert V.verify_new(TPL, CLONE, 302722, 2, {})
     with pytest.raises(ValueError): V.verify_new(TPL, CLONE, 302722, 3, {})
+
+
+@pytest.mark.skipif(not (os.path.exists(TPL) and os.path.exists(CLONE)), reason='needs the Autodesk 2026 template and the clone oracle file')
+def test_gate_clone_with_expect_accepts_true_clone_source_and_refuses_wrong_one(tmp_path):
+    import savegate as sg
+    def run(co):
+        cur = str(tmp_path / 'c.rte'); shutil.copy(TPL, cur)
+        man = {'added': ['el:302722'], 'modified': ['stream:Partitions/61', 'stream:Global/ElemTable'], 'expect': {302722: {'__clone_of__': co}}}
+        return sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(CLONE, 'rb').read(), man)
+    run(2)
+    with pytest.raises(sg.VerifyFailed): run(3)

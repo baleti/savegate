@@ -41,6 +41,11 @@ def _cache_path(buf, flags, reader_dir=None):
 def elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_records=True):
     """Snapshot of every element; results are cached on disk by the SHA-256 of the file (a second Save of the same source, or the
     source of a chain of saves, costs nothing), geometry runs in SAVEGATE_RVT_WORKERS fork workers (default min(4, cpus))."""
+    # c4x-rvtgap 2026-11-02: the SHARED default cache (~/.cache/savegate) held a source snapshot that differed from a fresh computation of the same bytes in 80 elements
+    # (cause not found; reproducible only once) and refused legitimate saves. A gate must not trust a stale snapshot: persistent caching is now opt-in
+    # (SAVEGATE_CACHE=<dir> or SAVEGATE_RVT_CACHE=1); default is compute every time.
+    if not (os.environ.get('SAVEGATE_CACHE') or os.environ.get('SAVEGATE_RVT_CACHE') == '1'):
+        return _elements(buf, reader_dir, with_geometry, with_params, with_records)
     cp = _cache_path(buf, '%d%d%d' % (with_geometry, with_params, with_records), reader_dir)
     try: return {int(k): v for k, v in json.load(open(cp)).items()}
     except (OSError, ValueError): pass

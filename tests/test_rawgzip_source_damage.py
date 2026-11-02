@@ -144,3 +144,16 @@ def test_element_cache_key_changes_when_the_reader_code_changes(tmp_path, monkey
     k2 = R._cache_path(b'abc', '011', str(rd)); assert k2 != k1
     (rd / 'new_module.py').write_text('Y = 1\n'); R._STAMP.clear()
     assert R._cache_path(b'abc', '011', str(rd)) not in (k1, k2)
+
+
+def test_element_snapshot_is_not_persisted_unless_asked(tmp_path, monkeypatch):
+    """c4x-rvtgap: a poisoned shared cache entry made the gate refuse a legitimate save (source snapshot != fresh snapshot of the same bytes); default is now no persistent cache."""
+    from savegate import rvt_elements as R
+    monkeypatch.delenv('SAVEGATE_CACHE', raising=False); monkeypatch.delenv('SAVEGATE_RVT_CACHE', raising=False)
+    monkeypatch.setenv('XDG_CACHE_HOME', str(tmp_path / 'xdg'))
+    calls = []
+    monkeypatch.setattr(R, '_elements', lambda *a, **k: calls.append(1) or {1: 'x'})
+    R.elements(b'abc'); R.elements(b'abc')
+    assert len(calls) == 2 and not (tmp_path / 'xdg').exists()
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'c')); R._STAMP.clear()
+    R.elements(b'abc'); R.elements(b'abc'); assert len(calls) == 3

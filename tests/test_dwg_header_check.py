@@ -69,3 +69,17 @@ def test_system_page_checksums():
         m = bytearray(b); m[off] ^= 1; assert f(bytes(m), info), hex(off)
     m = bytearray(b); m[0x300 + lp + 5] ^= 1; assert f(bytes(m), info) == []   # padding behind the page is not covered (harmless)
     assert f(b'AC1015' + bytes(0x600), info) == []
+
+
+def test_embedded_object_handle_must_match_object_map():
+    from savegate.adapters import DwgAdapter
+    DwgAdapter()                                    # puts the dwg lib (dwgbits) on sys.path
+    class O: pass
+    o = O(); o.raw = bytes([0x01, 0x5C, 0x00]); o.data_bit = 0          # H(): code 0, 1 counter byte, value 0x5C
+    assert DwgAdapter._handle_damage_one(0x5C, o) is False
+    assert DwgAdapter._handle_damage_one(0x5D, o) is True               # CRC-fixed flip in the value
+    o.raw = bytes([0x11, 0x5C, 0x00]); assert DwgAdapter._handle_damage_one(0x5C, o) is True    # code nibble must be 0
+    o.raw = bytes([0x09, 0x5C, 0x00]); assert DwgAdapter._handle_damage_one(0x5C, o) is True    # counter changed: reads garbage/short
+    class M: pass
+    m = M(); o.raw = bytes([0x01, 0x5C, 0x00]); m.objs = {0x5C: o, 0x5E: o}
+    assert DwgAdapter._handle_damage(m) == ['obj:5e: embedded handle 5c differs from the object map']

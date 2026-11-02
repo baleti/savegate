@@ -203,12 +203,41 @@ class DwgAdapter:
         return ['obj:%x: object CRC mismatch' % h for h, o in m.objs.items()
                 if len(o.raw) < 4 or _F.crc16(o.raw[:-2], 0xC0C1) != (o.raw[-2] | (o.raw[-1] << 8))]
 
+    @staticmethod
+    def _handle_damage_one(h, o):
+        """True if the object's own embedded handle is unreadable or differs from h (see _handle_damage)."""
+        try:
+            import dwgbits as _B
+            r = _B.Bits(o.raw, o.data_bit); _code, v = r.H()
+            return v != h or _code != 0
+        except ImportError:
+            return False
+        except Exception:
+            return True
+
+    @staticmethod
+    def _handle_damage(m):
+        """Objects whose OWN handle (first field of the object data, read by every decoder and thrown away) differs from the handle the object map gives them. The reader never looks at it,
+        the object CRC is easy to recompute: c4x-dwgreadfuzz item 84, 151/151 CRC-fixed flips in that field were accepted by the gate and 108/151 were invisible to the snapshot diff."""
+        try:
+            import dwgbits as _B
+        except ImportError:
+            return []
+        out = []
+        for h, o in m.objs.items():
+            try:
+                r = _B.Bits(o.raw, o.data_bit); _code, v = r.H()
+                if v != h or _code != 0: out.append('obj:%x: embedded handle %x differs from the object map' % (h, v))
+            except Exception:
+                out.append('obj:%x: embedded handle unreadable' % h)
+        return out
+
     def source_damage(self, buf):
         """c4x-dwgreadfuzz: damage in the SOURCE that the writer would carry over byte for byte (overwrite is refused; SAVE AS stays possible)."""
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200] + self._handle_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 
@@ -234,6 +263,7 @@ class DwgAdapter:
                 r = o.raw; s0 = ms.objs.get(h)
                 if s0 is not None and s0.raw == r: continue
                 if len(r) < 4 or _F.crc16(r[:-2], 0xC0C1) != (r[-2] | (r[-1] << 8)): bad.append(('object_crc', 'obj:%x' % h))
+                if self._handle_damage_one(h, o): bad.append(('embedded_handle', 'obj:%x' % h))
         except ImportError:
             pass
         # a block record that stops being listed turns every entity it owns into an orphan that no reader walks (entities silently vanish; c8-perf 2026-10-30):

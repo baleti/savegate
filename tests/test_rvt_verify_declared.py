@@ -404,3 +404,28 @@ def test_one_flipped_byte_in_any_other_stream_of_an_otherwise_valid_output_is_re
         with pytest.raises(sg.SaveError):
             sg.save(doc, good.read_bytes(), {'modified': mod, 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
         assert open(cur, 'rb').read() == before and sorted(os.listdir(tmp_path)) == ['c.rfa', 'good.rfa']
+
+
+def test_flipped_byte_in_any_non_partition_stream_is_refused_on_the_2026_family(tmp_path):
+    import savegate as sg, olefile
+    src = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+    if not os.path.exists(src): pytest.skip('2026 family absent')
+    good = tmp_path / 'good.rfa'; good.write_bytes(_edited_bytes(src, 7, 'HorizontalZ'))
+    a = olefile.OleFileIO(src); b = olefile.OleFileIO(str(good))
+    names = ['/'.join(e) for e in b.listdir()]
+    parts = [n for n in names if n.startswith('Partitions/') and a.openstream(n).read() != b.openstream(n).read()]
+    others = [n for n in names if not n.startswith('Partitions/')]; a.close(); b.close()
+    assert len(parts) == 1 and others
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(src, cur); before = open(cur, 'rb').read()
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)); orig = good.read_bytes(); refused = 0
+    for s in others:
+        g2 = tmp_path / 'g2.rfa'; g2.write_bytes(orig)
+        o = olefile.OleFileIO(str(g2), write_mode=True); d = bytearray(o.openstream(s).read())
+        if not d: o.close(); continue
+        d[len(d) // 2] ^= 1; o.write_stream(s, bytes(d)); o.close()
+        for mod in (['stream:' + parts[0], 'el:7'], ['stream:' + parts[0], 'el:7', 'stream:' + s]):
+            with pytest.raises(sg.SaveError):
+                sg.save(doc, g2.read_bytes(), {'modified': mod, 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+            refused += 1
+            assert open(cur, 'rb').read() == before
+    assert refused >= 2 * (len(others) - 1)

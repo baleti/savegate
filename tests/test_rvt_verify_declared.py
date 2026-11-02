@@ -689,9 +689,10 @@ def test_repeated_element_snapshots_do_not_leak_a_context_per_call():
     from savegate import rvt_elements as E
     buf = open(SRC, 'rb').read()
     rss = lambda: int(open('/proc/self/statm').read().split()[1]) * 4096 // 2 ** 20
-    E.elements(buf); gc.collect(); base = rss()
-    for _ in range(5): E.elements(buf)
+    for _ in range(6): E.elements(buf)      # warm-up: the allocator and lazy tables settle at about +30 MB
+    gc.collect(); base = rss()
+    for _ in range(6): E.elements(buf)
     gc.collect()
     grown = rss() - base
-    print('LEAK MB over 5 calls', grown)
-    assert grown < 30, 'was about 90 MB (18 MB per call) before the per-path cache purge'
+    print('LEAK MB over 6 calls after warm-up', grown)
+    assert grown < 15, 'was about 108 MB (18 MB per call) before the per-path cache purge'

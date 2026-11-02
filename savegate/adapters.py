@@ -374,6 +374,12 @@ class DwgAdapter:
             if h not in mo.blocks and 'obj:%x' % h not in ok: bad.append(('block_unlisted', 'obj:%x' % h))
         return bad
 
+    def _block_controls(self):
+        """obj keys of the BLOCK_CONTROL object(s) (type 48) of the source. The old code assumed handle 1; real files use other handles (c4x-dwgreadfuzz item 118: a dimension copy in an AC1024 file was refused because BLOCK_CONTROL is 0x4a1 there)."""
+        pair = getattr(self, '_pair', None)
+        if not pair: return set()
+        return {'obj:%x' % h for h, o in pair[0].objs.items() if o.type == 48}
+
     # structural objects/header vars that legitimately change with add/delete/edit
     def side_effects(self, manifest):
         se = set()
@@ -385,7 +391,7 @@ class DwgAdapter:
             if isinstance(k, int):
                 se.add('hdr:HANDSEED')
                 if k in self.bheaders: se.add('obj:%x' % self.bheaders[k])   # INSERT: the block record keeps the list of its inserts
-                if k in getattr(self, 'dims', ()): se |= {'obj:1'} | self.dimobjs.get(k, set())   # adding/removing a dimension adds/removes its anonymous block: BLOCK_CONTROL object list
+                if k in getattr(self, 'dims', ()): se |= {'obj:1'} | self._block_controls() | self.dimobjs.get(k, set())   # adding/removing a dimension adds/removes its anonymous block: BLOCK_CONTROL object list
                 if self.owners.get(k) is not None: se.add('obj:%x' % self.owners[k])
         return se
 

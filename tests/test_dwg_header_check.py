@@ -197,3 +197,15 @@ def test_preview_section_may_only_change_its_image_start_addresses():
         b = bytearray(a); b[40] = 1; cur['o'] = bytes(b); assert AD._preview_changed(M('s'), M('o')) == [40]     # image data
     finally:
         dwgfmt.r2004_section_data = saved
+
+
+def test_dimension_add_tolerates_the_real_block_control_handle():
+    import savegate.adapters as AD
+    class O:
+        def __init__(s, t): s.type = t; s.raw = b''
+    class M:
+        def __init__(s): s.objs = {0x4a1: O(48), 0x10: O(19)}
+    a = AD.DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}; a.dims = {0x99}
+    a._pair = (M(), M())
+    se = a.side_effects({'added': [0x99]})
+    assert 'obj:4a1' in se and 'obj:10' not in se

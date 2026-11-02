@@ -34,6 +34,26 @@ def _page_problems(buf, info):
     return out
 
 
+def _header_problems(buf):
+    """R2004/R2010/R2013/R2018 (AC1018, AC1024, AC1027, AC1032) file header: the encrypted 0x6C-byte block at 0x80 carries the magic 'AcFssFcAJMB' and a CRC32 (plain zlib crc32 over the
+    decrypted block with the CRC field zeroed). The reader ignores both, AutoCAD does not (c4x-dwgreadfuzz item 75: 24/25 single-bit header flips were accepted before this check)."""
+    import struct, zlib
+    if bytes(buf[:6]) not in (b'AC1018', b'AC1024', b'AC1027', b'AC1032'): return []
+    if len(buf) < 0x80 + 0x6C: return ['file header: truncated']
+    out0 = []
+    if bytes(buf[6:0x0B]) != bytes(5): out0.append('file header: bytes 6..10 not zero')       # 400/400 local R2004+ files have these invariants
+    if bytes(buf[0x28:0x2C]) != b'\x80\0\0\0': out0.append('file header: constant at 0x28')
+    seed = 1; h = bytearray(buf[0x80:0x80 + 0x6C])
+    for i in range(len(h)):
+        seed = (seed * 0x343FD + 0x269EC3) & 0xFFFFFFFF
+        h[i] ^= (seed >> 16) & 0xFF
+    out = out0
+    if bytes(h[:11]) != b'AcFssFcAJMB': out.append('file header: magic')
+    crc = struct.unpack_from('<I', h, 0x68)[0]; h[0x68:0x6C] = b'\0\0\0\0'
+    if zlib.crc32(bytes(h)) & 0xFFFFFFFF != crc: out.append('file header: CRC32')
+    return out
+
+
 class RawAdapter:
     """no format knowledge: the whole file is one object (tests, unknown formats are refused by pick_adapter)"""
     name = 'raw'
@@ -154,7 +174,7 @@ class DwgAdapter:
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 
@@ -210,6 +230,8 @@ class DwgAdapter:
         if m.version not in DWG_WRITABLE: raise VerifyFailed('output version %s' % m.version)
         if getattr(m, 'omap_ok', None) is False:      # c4x-dwgreadfuzz: the writer rebuilds the object map, so a wrong map CRC in the OUTPUT is a writer bug (AutoCAD would call it a corrupt file)
             raise VerifyFailed('object map CRC mismatch in the output')
+        hp = _header_problems(buf)
+        if hp: raise VerifyFailed('file header damaged in the output (%s)' % hp[0])
         pp = _page_problems(buf, getattr(m, '_info', None))
         if pp: raise VerifyFailed('page checksum mismatch in the output (%d, first: %s)' % (len(pp), pp[0]))
         hs = m.header().get('HANDSEED')

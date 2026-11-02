@@ -125,6 +125,23 @@ def _header_section_crc_ok(m):
         return None
 
 
+def _header_section_diff(ms, mo):
+    """Byte offsets of AcDb:Header section data that differ between source and output model, outside the HANDSEED field (<= 10 bytes) and the section CRC.
+    The decoded header variables stop after DIMATFIT for R2007+ (control-object handles, dictionary handles, FLAGS, INSUNITS, string and handle streams are NOT decoded),
+    so a flipped bit there is invisible to the snapshot. c4x-dwgreadfuzz item 111. None when not applicable."""
+    try:
+        import dwgfmt as F, dwghdr
+        if ms.version not in ('AC1018', 'AC1024', 'AC1027', 'AC1032') or mo.version != ms.version: return None
+        a = F.r2004_section_data(ms._buf, ms._info, 'AcDb:Header'); b = F.r2004_section_data(mo._buf, mo._info, 'AcDb:Header')
+        if len(a) != len(b): return [-1]
+        sp = dwghdr.header_vars(ms._buf, ms._info, ms.version).get('_seedpos')
+        if sp is None: return None
+        sz = int.from_bytes(a[16:20], 'little'); crc = 20 + sz + (0 if ms.version == 'AC1018' else 4)
+        return [i for i in range(len(a)) if a[i] != b[i] and not (sp // 8 <= i <= sp // 8 + 10) and not (crc <= i < crc + 2)]
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -290,6 +307,8 @@ class DwgAdapter:
                 if self._handle_damage_one(h, o): bad.append(('embedded_handle', 'obj:%x' % h))
         except ImportError:
             pass
+        hd_ = _header_section_diff(ms, mo)
+        if hd_: bad.append(('header_section_bytes', 'hdr:%d' % hd_[0]))
         okm = _header_section_crc_ok(mo)
         if okm is False and _header_section_crc_ok(ms) is not False: bad.append(('header_section_crc', 'hdr'))
         # c4x-dwgreadfuzz item 87: the element view compares ENTITIES by decoded fields only, so a CRC-consistent bit flip in a bit the decoder discards (e.g. the

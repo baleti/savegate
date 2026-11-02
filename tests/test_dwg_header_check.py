@@ -135,3 +135,27 @@ def test_output_header_section_crc_must_be_valid_if_source_was(monkeypatch=None)
             assert (('header_section_crc', 'hdr') in a.extra_checks({})) == flagged, (src, out)
     finally:
         AD._header_section_crc_ok = real
+
+
+def test_header_section_may_only_change_in_the_seed_field_and_crc():
+    import savegate.adapters as AD
+    DwgA = AD.DwgAdapter; DwgA()
+    import dwgfmt, dwghdr
+    a = bytearray(range(256)) * 2; a[16:20] = (400).to_bytes(4, 'little')
+    class M:
+        def __init__(s, data): s.version = 'AC1032'; s._buf = b''; s._info = {}; s.d = bytes(data)
+    saved = (dwgfmt.r2004_section_data, dwghdr.header_vars)
+    try:
+        dwgfmt.r2004_section_data = lambda buf, info, name: info_data[0]
+        dwghdr.header_vars = lambda buf, info, ver: {'_seedpos': 800}
+        info_data = [None]
+        def diff(x, y):
+            seq = iter([bytes(x), bytes(y)]); dwgfmt.r2004_section_data = lambda buf, info, name: next(seq)
+            return AD._header_section_diff(M(x), M(y))
+        b = bytearray(a); assert diff(a, b) == []
+        b[50] ^= 1; assert diff(a, b) == [50]
+        b = bytearray(a); b[800 // 8 + 2] ^= 1; assert diff(a, b) == []          # inside the seed field
+        crc = 20 + 400 + 4; b = bytearray(a); b[crc] ^= 1; assert diff(a, b) == []
+        b = bytearray(a); b[300] ^= 1; assert diff(a, b) == [300]                 # undecoded tail bit
+    finally:
+        dwgfmt.r2004_section_data, dwghdr.header_vars = saved

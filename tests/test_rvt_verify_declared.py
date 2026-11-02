@@ -162,3 +162,26 @@ def test_in_place_save_in_a_folder_and_file_name_with_spaces_and_non_ascii(tmp_p
     rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalU')], sg.Config(allow_overwrite=True, require_gate=False))
     V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalU'})
     assert 'Pl\u00e4n 1 final.rfa' in os.listdir(d) and not [n for n in os.listdir(d) if n.endswith('.sgtmp')]
+
+
+def _saver(cur, eid, fld, txt, q):
+    import savegate as sg
+    from savegate import rvt_save
+    try:
+        rvt_save.save_string_edits(cur, [(eid, fld, txt)], sg.Config(allow_overwrite=True, require_gate=False)); q.put((eid, 'saved'))
+    except Exception as e: q.put((eid, type(e).__name__))
+
+
+def test_two_processes_saving_the_same_file_never_lose_or_mix_edits(tmp_path):
+    import multiprocessing as mp, savegate as sg
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    ctx = mp.get_context('fork'); q = ctx.Queue()
+    ps = [ctx.Process(target=_saver, args=(cur, 7, 'FillPattern.m_name', 'HorizontalP', q)), ctx.Process(target=_saver, args=(cur, 0, 'SymbolInfo.m_name', 'LinearP', q))]
+    [p.start() for p in ps]; [p.join(120) for p in ps]
+    res = dict(q.get(timeout=5) for _ in ps)
+    assert set(res.values()) <= {'saved', 'Conflict', 'Locked'}, res
+    assert 'saved' in res.values(), res
+    d7 = V.field_diff(SRC, cur, 7)[0]; d0 = V.field_diff(SRC, cur, 0)[0]
+    # each saved edit is present, each refused edit is absent, nothing else changed
+    assert bool(d7) == (res[7] == 'saved') and bool(d0) == (res[0] == 'saved'), (res, d7, d0)
+    assert not [n for n in os.listdir(tmp_path) if n.endswith('.sgtmp')]

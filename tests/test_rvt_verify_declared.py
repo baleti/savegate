@@ -363,3 +363,31 @@ def test_long_string_edit_is_verified_in_full_not_on_the_60_char_log_prefix(tmp_
     tail_wrong = val[:300] + 'Z' + val[301:]      # differs only after char 60
     with pytest.raises(ValueError):
         V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': tail_wrong})
+
+
+def _deleted_bytes(path, eid):
+    import sys, tempfile
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+    import wledit
+    ed = wledit.Editor(path); pn = ed.trace(eid)[0]; ed.delete(eid)
+    with tempfile.TemporaryDirectory() as d:
+        o = os.path.join(d, 'o.rfa'); ed.save(o); return pn, open(o, 'rb').read()
+
+
+def test_element_delete_through_the_gate_declared_is_judged_undeclared_is_refused(tmp_path):
+    import savegate as sg
+    pn, new = _deleted_bytes(SRC, 7)
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    for man in ({}, {'modified': [pn]}, {'modified': ['stream:' + pn]}):      # undeclared element / stream: must be refused
+        with pytest.raises(sg.SaveError):
+            sg.save(doc, new, man)
+        assert open(cur, 'rb').read() == before
+    with pytest.raises(sg.SaveError):      # delete declared for a different element: refused
+        sg.save(doc, new, {'modified': ['stream:' + pn], 'deleted': ['el:0']})
+    assert open(cur, 'rb').read() == before
+    sg.save(doc, new, {'modified': ['stream:' + pn], 'deleted': ['el:7']})      # the declared delete is accepted
+    assert open(cur, 'rb').read() != before
+    assert V.field_diff(SRC, cur, 0)[0] == []      # a neighbouring element is untouched
+    with pytest.raises(ValueError):      # and el:7 is really gone
+        V.field_diff(SRC, cur, 7)

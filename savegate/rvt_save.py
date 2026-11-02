@@ -20,3 +20,24 @@ def save_string_edits(path, edits, cfg=None, dest=None):
     man = {'modified': sorted('stream:' + p for p in parts) + ['el:%d' % e for e in sorted(expect)], 'expect': expect}
     doc = sg.open_doc(path, None, cfg)
     return (sg.save_as(doc, new, dest, man) if dest else sg.save(doc, new, man))
+
+
+_MSG = {
+    'Conflict': 'The file changed on disk since it was opened. Nothing was saved. Reload it and repeat the edit.',
+    'VerifyFailed': 'The edited file failed the safety check, so the original was NOT touched. Use Save As to write a copy, or report this file.',
+    'UnsupportedVersion': 'This Revit version cannot be saved in place. Open it in Revit and Save As a supported year.',
+    'GateClosed': 'Saving over the original is switched off. Use Save As.',
+    'OverwriteDisabled': 'Saving over the original is switched off. Use Save As.',
+    'Locked': 'Another save of this file is running. Nothing was written; try again in a moment.',
+    'DiskError': 'The disk refused the write (full, read-only or name too long). The original is unchanged.',
+    'Exists': 'A file with that name already exists. Nothing was written.',
+    'HardlinkTarget': 'The file has other hard links; saving over it would detach them. Use Save As.',
+    'ReadOnlyTarget': 'The file is read-only. Nothing was written.',
+}
+
+
+def user_message(exc):
+    """text for the user for any exception from the gate; an unknown exception is reported as a refusal, never as success"""
+    name = type(exc).__name__
+    base = _MSG.get(name, 'The save failed (%s). The original was not touched.' % name)
+    return base + (' Detail: ' + str(exc)[:300] if str(exc) else '')

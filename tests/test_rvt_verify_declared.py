@@ -113,3 +113,13 @@ def test_reference_app_path_edits_in_place_through_the_gate_and_save_as_keeps_or
     rvt_save.save_string_edits(cur, [(0, 'SymbolInfo.m_name', 'LinearQ'), (7, 'FillPattern.m_name', 'HorizontalZ')], cfg)
     V.verify_declared(SRC, cur, 0, {'SymbolInfo.m_name': 'LinearQ'})
     V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalZ'})
+
+
+def test_every_gate_error_class_has_a_specific_user_message():
+    from savegate import errors, rvt_save
+    for n in dir(errors):
+        c = getattr(errors, n)
+        if isinstance(c, type) and issubclass(c, errors.SaveError) and c is not errors.SaveError:
+            assert n in rvt_save._MSG, n
+            assert 'original' in rvt_save.user_message(c('x')).lower() or 'nothing' in rvt_save.user_message(c('x')).lower() or 'save as' in rvt_save.user_message(c('x')).lower()
+    assert 'not touched' in rvt_save.user_message(RuntimeError('boom'))

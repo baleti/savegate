@@ -83,3 +83,17 @@ def test_embedded_object_handle_must_match_object_map():
     class M: pass
     m = M(); o.raw = bytes([0x01, 0x5C, 0x00]); m.objs = {0x5C: o, 0x5E: o}
     assert DwgAdapter._handle_damage(m) == ['obj:5e: embedded handle 5c differs from the object map']
+
+
+def test_undeclared_object_with_changed_bytes_is_refused_even_if_it_decodes_the_same():
+    """item 87: entity compared by decoded fields only; a flipped discarded bit changes raw but not the decoded entity."""
+    from savegate.adapters import DwgAdapter
+    class O:
+        def __init__(s, raw): s.raw = raw; s.type = 19; s.data_bit = 0
+    class M:
+        def __init__(s, raws): s.objs = {h: O(r) for h, r in raws.items()}; s.blocks = {}
+    a = DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
+    a._pair = (M({0x40: b'\x01\x40\x00\x00\x00'}), M({0x40: b'\x01\x40\x00\x00\x01'}))
+    r = a.extra_checks({'modified': []})
+    assert ('undeclared_object_bytes', 'obj:40') in r
+    assert ('undeclared_object_bytes', 'obj:40') not in a.extra_checks({'modified': [0x40]})

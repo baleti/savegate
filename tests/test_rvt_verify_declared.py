@@ -552,3 +552,43 @@ def test_renamed_or_duplicate_directory_entry_in_the_output_is_refused(tmp_path,
     print('DIRNAME', mode, verdict)
     assert verdict.startswith('REFUSED')
     assert open(cur, 'rb').read() == before
+
+
+S26 = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+
+
+def _edit26(items):
+    import tempfile
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+    import wledit
+    ed = wledit.Editor(S26); ed.set_strings(items)
+    with tempfile.TemporaryDirectory() as d:
+        o = os.path.join(d, 'o.rfa'); ed.save(o); return open(o, 'rb').read()
+
+
+@pytest.mark.skipif(not os.path.exists(S26), reason='2026 family absent')
+@pytest.mark.parametrize('which', ['first', 'last', 'both'])
+def test_2026_edit_at_first_and_last_decodable_record_is_accepted_and_flips_outside_are_refused(tmp_path, which):
+    import savegate as sg, olefile
+    first = (0, 'SymbolInfo.m_name', 'LinearBoundary'); last = (6444, 'KeynoteTable.m_name', 'StandardBoundary')
+    items = {'first': [first], 'last': [last], 'both': [first, last]}[which]
+    good = _edit26(items)
+    expect = {i[0]: {i[1]: i[2]} for i in items}
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(S26, cur); before = open(cur, 'rb').read()
+    cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    man = lambda: {'modified': ['stream:Partitions/69'] + ['el:%d' % i[0] for i in items] + (['el:1'] if any(i[0] == 0 for i in items) else []), 'expect': expect}
+    # flips outside any record: all refused
+    refused = 0
+    for frac in (0.02, 0.2, 0.5, 0.8, 0.98):
+        g = tmp_path / 'g.rfa'; g.write_bytes(good)
+        o = olefile.OleFileIO(str(g), write_mode=True); d = bytearray(o.openstream('Partitions/69').read()); d[int(len(d) * frac)] ^= 0x04; o.write_stream('Partitions/69', bytes(d)); o.close()
+        doc = sg.open_doc(cur, None, cfg)
+        with pytest.raises(sg.SaveError): sg.save(doc, g.read_bytes(), man())
+        refused += 1; assert open(cur, 'rb').read() == before
+    doc = sg.open_doc(cur, None, cfg)
+    try:
+        sg.save(doc, good, man()); verdict = 'ACCEPTED'
+    except sg.SaveError as ex:
+        verdict = 'REFUSED ' + str(ex)[:140]
+    print('B26', which, 'flips refused', refused, 'edit', verdict)
+    assert verdict == 'ACCEPTED' or open(cur, 'rb').read() == before

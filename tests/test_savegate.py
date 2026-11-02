@@ -1351,3 +1351,17 @@ def test_rvt_clone_without_id_counter_bump_is_refused(tmp_path, monkeypatch):
     with pytest.raises(sg.VerifyFailed) as ei: sg.save(sg.open_doc(str(p), None, cfg()), outs['nobump'][0], decl)
     assert 'id_counter' in str(ei.value.report) and p.read_bytes() == orig
     sg.save(sg.open_doc(str(p), None, cfg()), outs['bump'][0], decl)
+
+
+def test_unexpected_exception_while_checking_the_output_becomes_a_clear_refusal(tmp_path):
+    """c4x-dwgreadfuzz item 123: raw IndexError/ValueError from the reader on a damaged output must surface as VerifyFailed naming the problem; original untouched."""
+    class Boom(RawAdapter):
+        def snapshot(self, buf):
+            if buf.startswith(b'NEW'): raise IndexError('list index out of range')
+            return {'file': 'x'}
+    p = tmp_path / 'a.bin'; p.write_bytes(b'OLD' * 50)
+    with sg.open_doc(str(p), Boom(), cfg()) as doc:
+        with pytest.raises(sg.VerifyFailed) as ei:
+            sg.save(doc, b'NEW' * 50, {})
+        assert 'could not be read back' in str(ei.value) and 'IndexError' in str(ei.value)
+    assert p.read_bytes() == b'OLD' * 50

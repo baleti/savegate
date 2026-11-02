@@ -63,6 +63,20 @@ def open_doc(path, adapter=None, cfg=None, journal=True):
 
 
 def _verify(doc, new_bytes, manifest):
+    """Any unexpected exception while reading/judging the OUTPUT means the output is damaged (or the verifier cannot judge it): refuse with a message that says so
+    (c4x-dwgreadfuzz item 123: 27/300 random bit flips surfaced as raw IndexError/ValueError/KeyError/AttributeError from lz77_decompress, dwgbits, r2004_open...)."""
+    try:
+        return _verify_inner(doc, new_bytes, manifest)
+    except SaveError:
+        raise
+    except Exception as e:
+        import traceback
+        tb = traceback.extract_tb(e.__traceback__)[-1]
+        raise VerifyFailed('the saved output could not be read back and checked (%s: %s, in %s); the original file was not touched' % (type(e).__name__, str(e)[:80], tb.name),
+                           dict(error=type(e).__name__, where='%s:%s' % (tb.filename.rsplit('/', 1)[-1], tb.name)))
+
+
+def _verify_inner(doc, new_bytes, manifest):
     ad = doc.adapter
     a, b = ad.snapshot_pair(doc.buf, new_bytes) if hasattr(ad, 'snapshot_pair') else (ad.snapshot(doc.buf), ad.snapshot(new_bytes))
     mod, add, dele = ad.expand(manifest) if hasattr(ad, 'expand') else (set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ())))

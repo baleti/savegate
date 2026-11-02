@@ -2,7 +2,8 @@
 so a crc rule gives false positives on clean files and cannot detect flips. Requirements that are checkable:
  1. source_damage == [] on clean Autodesk samples (a crc rule would flag them and refuse every save);
  2. an unedited save_as keeps Formats/Latest byte-identical to the source (writable years)."""
-import os, sys, pytest
+import os, sys, shutil, pytest
+import savegate as sg
 from savegate import adapters, core
 S = os.path.expanduser('~/rvt-research/samples-rfa/')
 FILES = ['rac_basic_sample_family-2018.rfa', 'racbasicsamplefamily-2024.rfa', 'racbasicsamplefamily-2026.rfa']
@@ -64,3 +65,22 @@ def test_set_string_refuses_a_non_string_field_with_matching_span(tmp_path):
         ed.set_string(0, 'Identifier.m_id64', 'ab', match='17')
     l = next(l for l in ed.trace(0)[3] if l[1] == 'SymbolInfo.m_name')
     ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); ed.save(str(tmp_path / 'o.rfa'))
+
+
+def test_junk_in_the_zero_padding_of_a_padded_partition_is_refused_without_the_element_view(tmp_path, monkeypatch):
+    """c4x-rvtgap: second-generation edits pad the partition with a 64 KB zero page; a byte of junk there (valid ECC) was accepted when the element view is off."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw'); wledit = pytest.importorskip('wledit')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(src, cur)
+    for txt in ('XY', 'Z' * 300):      # gen2 overflows the last ECC page of gen1 -> full zero page
+        ed = wledit.Editor(cur); l = next(l for l in ed.trace(0)[3] if l[1] == 'SymbolInfo.m_name')
+        ed.set_string(0, l[1], l[4] + txt, match=l[4]); o = str(tmp_path / 'o.rfa'); ed.save(o); del ed
+        if txt != 'XY': break
+        shutil.copy(o, cur)
+    good = open(o, 'rb').read(); pn = 'Partitions/67'
+    A = adapters.RvtAdapter(); assert A.validate(good)
+    c = cfb.CFB(good); st = rvtw.Stream(c.streams()[pn].data); P = bytearray(st.payload); assert P[-1000:] == bytes(1000)
+    P[len(P) - 30000] = 0x5a; c.streams()[pn].data = st.build(bytes(P), keep_spare=False); b2 = str(tmp_path / 'j.rfa'); cfb.write(c, b2)
+    with pytest.raises(sg.VerifyFailed, match='partition tail'): A.validate(open(b2, 'rb').read())

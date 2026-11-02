@@ -1,5 +1,5 @@
 """Versioned backups next to the file (<dir>/.savegate/), falling back to the user cache dir."""
-import re, os, shutil, time, hashlib
+import re, os, sys, shutil, time, hashlib
 from .atomic import long_path, sha256_file, fsync_dir, full_fsync, write_temp, commit_temp
 from .errors import DiskError, SaveError, Conflict
 
@@ -16,6 +16,13 @@ def backup_dirs(path):
     return [os.path.join(d, '.savegate'), os.path.join(_cache_dir(), hashlib.sha1(d.encode('utf-8', 'surrogatepass')).hexdigest()[:12])]
 
 
+_CASE_INSENSITIVE = sys.platform in ('win32', 'darwin')      # c4x-rvtgap: 'Model.rvt' and 'model.RVT' are one file there; on Linux they are two and must NOT share backups (wrong-file restore)
+
+
+def _fold(x):
+    return x.lower() if _CASE_INSENSITIVE else x
+
+
 def list_backups(path):
     """newest first: [(name, full_path, size)]"""
     n = os.path.basename(path); out = []
@@ -23,7 +30,7 @@ def list_backups(path):
         try: names = os.listdir(bd)
         except OSError: continue
         for x in names:
-            if x.startswith(n + '.') and re.fullmatch(r'\d{8}-\d{6}-\d{3}-[0-9a-f]{8}', x[len(n) + 1:]):      # c4x-rvtgap: exact stamp, so 'm.rvt.v2' backups are never taken for 'm.rvt' (prune deleted them, restore could write them into m.rvt)
+            if _fold(x).startswith(_fold(n) + '.') and re.fullmatch(r'\d{8}-\d{6}-\d{3}-[0-9a-f]{8}', x[len(n) + 1:]):      # c4x-rvtgap: exact stamp, so 'm.rvt.v2' backups are never taken for 'm.rvt' (prune deleted them, restore could write them into m.rvt)
                 p = os.path.join(bd, x)
                 try: out.append((x, p, os.stat(p).st_size))
                 except OSError: pass

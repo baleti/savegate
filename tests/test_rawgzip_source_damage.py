@@ -206,3 +206,13 @@ def test_lock_is_shared_by_names_that_differ_only_in_case(tmp_path):
     from savegate import guard
     assert guard._lock_path(str(tmp_path / 'Model.rvt')) == guard._lock_path(str(tmp_path / 'model.RVT'))
     assert guard._lock_path(str(tmp_path / 'a.rvt')) != guard._lock_path(str(tmp_path / 'a.rvt.x'))
+
+
+def test_backup_lists_fold_case_only_on_case_insensitive_platforms(tmp_path, monkeypatch):
+    import time
+    from savegate import backup
+    a = tmp_path / 'Model.rvt'; a.write_bytes(b'AAAA'); backup.make_backup(str(a))
+    monkeypatch.setattr(backup, '_CASE_INSENSITIVE', False)
+    assert backup.list_backups(str(tmp_path / 'model.RVT')) == [] and len(backup.list_backups(str(a))) == 1      # Linux: two different files
+    monkeypatch.setattr(backup, '_CASE_INSENSITIVE', True)
+    assert len(backup.list_backups(str(tmp_path / 'model.RVT'))) == 1                                              # Windows/macOS: the same file

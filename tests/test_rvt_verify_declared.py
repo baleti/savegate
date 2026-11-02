@@ -50,3 +50,13 @@ def test_verify_new_refuses_an_id_that_already_exists_in_the_source():
 
 def test_verify_new_refuses_an_id_missing_from_the_output():
     with pytest.raises(ValueError): V.verify_new(SRC, GEN1, 99999999, None, {})
+
+
+TPL = os.path.expanduser('~/rvt-research/corpus/2026/77_Construction-DefaultMetric.rte')
+CLONE = os.path.expanduser('~/demo-state/oracle-files/c4x_2026_construction_template_clone1.rte')
+
+
+@pytest.mark.skipif(not (os.path.exists(TPL) and os.path.exists(CLONE)), reason='needs the Autodesk 2026 template and the clone oracle file')
+def test_verify_new_accepts_the_real_clone_and_refuses_a_wrong_clone_source():
+    assert V.verify_new(TPL, CLONE, 302722, 2, {})
+    with pytest.raises(ValueError): V.verify_new(TPL, CLONE, 302722, 3, {})

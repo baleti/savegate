@@ -45,8 +45,22 @@ def test_writer_copies_every_stream_but_the_edited_partition(y, tmp_path):
     o = str(tmp_path / 'n.rfa'); cfb.write(cfb.CFB(open(src, 'rb').read()), o)
     N = cfb.CFB(open(o, 'rb').read()).streams()
     assert set(N) == set(St) and [n for n in St if N[n].data != St[n].data] == []
-    ed = wledit.Editor(src); l = next(l for l in ed.trace(0)[3] if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None')
+    ed = wledit.Editor(src); l = next(l for l in ed.trace(0)[3] if l[1] == 'SymbolInfo.m_name')
     ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); o2 = str(tmp_path / 'e.rfa'); ed.save(o2)
     E = cfb.CFB(open(o2, 'rb').read()).streams()
     d = [n for n in St if E[n].data != St[n].data]
     assert set(E) == set(St) and len(d) == 1 and d[0].startswith('Partitions/')
+
+
+def test_set_string_refuses_a_non_string_field_with_matching_span(tmp_path):
+    """c4x-rvtgap: Identifier.m_id64 (text '17', 8-byte span == 4+2*2) used to be overwritten by a string edit and saved as a valid-looking file."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    wledit = pytest.importorskip('wledit')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    ed = wledit.Editor(src)
+    if not hasattr(ed, '_check_wstr'): pytest.skip('wledit without the type check')
+    with pytest.raises(ValueError, match='not a length-prefixed wide string'):
+        ed.set_string(0, 'Identifier.m_id64', 'ab', match='17')
+    l = next(l for l in ed.trace(0)[3] if l[1] == 'SymbolInfo.m_name')
+    ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); ed.save(str(tmp_path / 'o.rfa'))

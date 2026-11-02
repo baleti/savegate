@@ -141,3 +141,15 @@ def test_rename_refused_by_the_os_leaves_original_and_no_debris(tmp_path, monkey
     debris = [n for n in os.listdir(tmp_path) if n.endswith('.sgtmp') or n.startswith('.f.rfa.savegate')]
     assert not [n for n in debris if n.endswith('.sgtmp')], debris
     assert 'original' in rvt_save.user_message(ei.value).lower() or 'nothing' in rvt_save.user_message(ei.value).lower()
+
+
+def test_four_chained_in_place_saves_on_the_2026_family(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    src = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+    if not os.path.exists(src): pytest.skip('2026 family absent')
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(src, cur); cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    for e in ([(7, 'FillPattern.m_name', 'Horizontal1')], [(0, 'SymbolInfo.m_name', 'LinearA')], [(7, 'FillPattern.m_name', 'Horizontal22222')], [(7, 'FillPattern.m_name', 'Horizontal')]):
+        rvt_save.save_string_edits(cur, e, cfg)
+    assert V.field_diff(src, cur, 7)[0] == []      # reverted to the original value
+    V.verify_declared(src, cur, 0, {'SymbolInfo.m_name': 'LinearA'})

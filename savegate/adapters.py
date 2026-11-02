@@ -544,6 +544,7 @@ class RvtAdapter:
     def __init__(self, lib=None, elements_fn=None):
         lib = lib or os.environ.get('SAVEGATE_RVT_LIB') or os.path.expanduser('~/rvt-research/write-lab')
         if lib not in sys.path: sys.path.insert(0, lib)
+        if os.path.dirname(lib) not in sys.path: sys.path.append(os.path.dirname(lib))   # rvt_integrity.py lives next to write-lab
         self.elements_fn = elements_fn      # optional: buf -> {key: comparable} (reader element/parameter dump)
 
     def sniff(self, buf):
@@ -596,6 +597,10 @@ class RvtAdapter:
         errs = []
         try: S = cfb.CFB(bytes(buf)).streams()
         except Exception as ex: return ['container unreadable: %s' % ex]
+        try:
+            import rvt_integrity       # c4x-dwgreadfuzz 190: FAT/miniFAT loops, DIFAT, directory tree: olefile-style readers accept these silently
+            errs.extend('container %s: %s' % x for x in rvt_integrity.audit(bytes(buf)))
+        except ImportError: errs.append('container audit unavailable (rvt_integrity.py not found next to the writer lab)')
         for n, e in S.items():
             if len(e.data) != e.size: errs.append('%s: %d bytes readable of %d declared (FAT chain damaged/truncated)' % (n, len(e.data), e.size)); continue   # c4x-rvtgap
             if n in ('PartAtom', 'RevitPreview4.0', 'BasicFileInfo', 'Contents', 'TransmissionData'):   # c7x-rvtread2: plain streams, structure rules (0 false positives on 22 public samples)

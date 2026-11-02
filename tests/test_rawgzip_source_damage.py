@@ -173,3 +173,16 @@ def test_edit_that_overflows_the_partition_raises_a_clear_error_and_writes_nothi
     try: ed.save(o)
     except IndexError: pytest.fail('uncontrolled IndexError')
     except ValueError as ex: assert 'capacity exceeded' in str(ex) and not os.path.exists(o)
+
+
+def test_save_refuses_to_run_under_python_O(tmp_path):
+    """c4x-rvtgap: writer modules guard with asserts; python -O strips them, so a save under -O is refused."""
+    import subprocess
+    p = tmp_path / 'a.bin'; p.write_bytes(b'O' * 100)
+    code = ("import sys; sys.path.insert(0, %r)\nimport savegate as sg\nfrom savegate.adapters import RawAdapter\n"
+            "d = sg.open_doc(%r, RawAdapter(), sg.Config(allow_overwrite=True, require_gate=False))\n"
+            "try: sg.save(d, b'N' * 100, {'modified': ['file']}); print('SAVED')\nexcept sg.GateClosed as e: print('CLOSED')\n") % (os.path.join(os.path.dirname(__file__), '..'), str(p))
+    r = subprocess.run([sys.executable, '-O', '-c', code], capture_output=True, text=True)
+    assert 'CLOSED' in r.stdout and p.read_bytes() == b'O' * 100, r
+    r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
+    assert 'SAVED' in r.stdout, r

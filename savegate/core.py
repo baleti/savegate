@@ -116,6 +116,8 @@ def _finish_check(dest, new_bytes):
 
 
 def save_as(doc, new_bytes, dest, manifest=None, overwrite=False, verify=None):
+    if not __debug__ and not os.environ.get('SAVEGATE_ALLOW_OPTIMIZED'):      # c4x-rvtgap: asserts are the guards of several writer modules; python -O strips them
+        raise GateClosed('savegate refuses to write under python -O / PYTHONOPTIMIZE: assert-based guards in the writers are disabled. Run without -O (or set SAVEGATE_ALLOW_OPTIMIZED=1 at your own risk).')
     try:
         return _save_as(doc, new_bytes, dest, manifest, overwrite, verify)
     except OSError as e:
@@ -163,6 +165,8 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
 
 
 def save(doc, new_bytes, manifest=None, force=False, verify=None):
+    if not __debug__ and not os.environ.get('SAVEGATE_ALLOW_OPTIMIZED'):      # c4x-rvtgap: asserts are the guards of several writer modules; python -O strips them
+        raise GateClosed('savegate refuses to write under python -O / PYTHONOPTIMIZE: assert-based guards in the writers are disabled. Run without -O (or set SAVEGATE_ALLOW_OPTIMIZED=1 at your own risk).')
     try:
         return _save(doc, new_bytes, manifest, force, verify)
     except OSError as e:

@@ -39,3 +39,33 @@ def test_preamble_snapshot_changes_with_any_preamble_byte():
         assert _preamble_snap(bytes(b)) != _preamble_snap(a), off
     b = bytearray(a); b[0x80] ^= 1; assert _preamble_snap(bytes(b)) == _preamble_snap(a)   # encrypted block is covered by _header_problems, not this
     assert _preamble_snap(b'AC1015' + bytes(300)) is None
+
+
+def _with_system_pages():
+    from savegate.adapters import _system_page_problems
+    def page(typ, data):
+        hz = struct.pack('<5I', typ, 100, len(data), 2, 0)
+        ck = zlib.adler32(data, zlib.adler32(hz, 0) & 0xFFFFFFFF) & 0xFFFFFFFF
+        return struct.pack('<5I', typ, 100, len(data), 2, ck) + data
+    h = bytearray(0x6C); h[:11] = b'AcFssFcAJMB'
+    struct.pack_into('<q', h, 0x54, 0x300 - 0x100); struct.pack_into('<I', h, 0x5C, 7)
+    h[0x68:0x6C] = struct.pack('<I', zlib.crc32(bytes(h)) & 0xFFFFFFFF)
+    seed = 1; e = bytearray(h)
+    for i in range(len(e)):
+        seed = (seed * 0x343FD + 0x269EC3) & 0xFFFFFFFF; e[i] ^= (seed >> 16) & 0xFF
+    b = bytearray(0x600); b[:6] = b'AC1032'; b[0x28:0x2C] = b'\x80\0\0\0'; b[0x80:0x80 + 0x6C] = e
+    pm = page(0x41630E3B, bytes(range(50))); sm = page(0x4163003B, bytes(range(80)))
+    b[0x300:0x300 + len(pm)] = pm; b[0x400:0x400 + len(sm)] = sm
+    info = {'pages': {7: (0x400, 0x100)}}
+    return b, info, _system_page_problems, len(pm), len(sm)
+
+
+def test_system_page_checksums():
+    b, info, f, lp, ls = _with_system_pages()
+    assert f(bytes(b), info) == []
+    for off in (0x300, 0x310, 0x300 + 25, 0x300 + lp - 1):                 # header, checksum field, data
+        m = bytearray(b); m[off] ^= 1; assert f(bytes(m), info), hex(off)
+    for off in (0x400 + 3, 0x400 + 22, 0x400 + ls - 1):
+        m = bytearray(b); m[off] ^= 1; assert f(bytes(m), info), hex(off)
+    m = bytearray(b); m[0x300 + lp + 5] ^= 1; assert f(bytes(m), info) == []   # padding behind the page is not covered (harmless)
+    assert f(b'AC1015' + bytes(0x600), info) == []

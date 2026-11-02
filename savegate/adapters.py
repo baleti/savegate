@@ -34,6 +34,33 @@ def _page_problems(buf, info):
     return out
 
 
+def _dec_header(buf):
+    seed = 1; h = bytearray(buf[0x80:0x80 + 0x6C])
+    for i in range(len(h)):
+        seed = (seed * 0x343FD + 0x269EC3) & 0xFFFFFFFF
+        h[i] ^= (seed >> 16) & 0xFF
+    return h
+
+
+def _system_page_problems(buf, info):
+    """R2004-family SYSTEM pages (page map at the header address, section map): header 0x41630E3B, checksum = adler32(compressed data, seed = adler32(20-byte header with the checksum field zeroed))
+    (verified on a real file: stored 0xF06626E5). The reader ignores it (36/40 random flips inside the page map were accepted by the gate before)."""
+    import struct, zlib
+    if not info or bytes(buf[:6]) not in (b'AC1018', b'AC1024', b'AC1027', b'AC1032') or len(buf) < 0x80 + 0x6C: return []
+    h = _dec_header(buf); out = []
+    addrs = {'page map': struct.unpack_from('<q', h, 0x54)[0] + 0x100}
+    sm = struct.unpack_from('<I', h, 0x5C)[0]
+    if sm in info['pages']: addrs['section map'] = info['pages'][sm][0]
+    for nm, a in addrs.items():
+        if a < 0 or a + 20 > len(buf): out.append('%s: header beyond end of file' % nm); continue
+        t, ds, cs, ct, ck = struct.unpack_from('<5I', buf, a)
+        if t not in (0x41630E3B, 0x4163003B): out.append('%s: bad system page type' % nm); continue
+        if a + 20 + cs > len(buf): out.append('%s: data beyond end of file' % nm); continue
+        hz = bytearray(buf[a:a + 20]); hz[16:20] = bytes(4)
+        if zlib.adler32(bytes(buf[a + 20:a + 20 + cs]), zlib.adler32(bytes(hz), 0) & 0xFFFFFFFF) & 0xFFFFFFFF != ck: out.append('%s: checksum' % nm)
+    return out
+
+
 def _preamble_snap(buf):
     """R2004+ files: bytes 0x00..0x7F of the file (version, maintenance, preview/summary/VBA seekers, codepage, security flags) have NO checksum and the reader ignores them,
     but the writer copies them verbatim (measured: no-edit rewrite of a real AC1032 keeps all 128 bytes). A save that alters them is a writer bug (c4x-dwgreadfuzz item 75b)."""
@@ -50,10 +77,7 @@ def _header_problems(buf):
     out0 = []
     if bytes(buf[6:0x0B]) != bytes(5): out0.append('file header: bytes 6..10 not zero')       # 400/400 local R2004+ files have these invariants
     if bytes(buf[0x28:0x2C]) != b'\x80\0\0\0': out0.append('file header: constant at 0x28')
-    seed = 1; h = bytearray(buf[0x80:0x80 + 0x6C])
-    for i in range(len(h)):
-        seed = (seed * 0x343FD + 0x269EC3) & 0xFFFFFFFF
-        h[i] ^= (seed >> 16) & 0xFF
+    h = _dec_header(buf)
     out = out0
     if bytes(h[:11]) != b'AcFssFcAJMB': out.append('file header: magic')
     crc = struct.unpack_from('<I', h, 0x68)[0]; h[0x68:0x6C] = b'\0\0\0\0'
@@ -184,7 +208,7 @@ class DwgAdapter:
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 
@@ -240,7 +264,7 @@ class DwgAdapter:
         if m.version not in DWG_WRITABLE: raise VerifyFailed('output version %s' % m.version)
         if getattr(m, 'omap_ok', None) is False:      # c4x-dwgreadfuzz: the writer rebuilds the object map, so a wrong map CRC in the OUTPUT is a writer bug (AutoCAD would call it a corrupt file)
             raise VerifyFailed('object map CRC mismatch in the output')
-        hp = _header_problems(buf)
+        hp = _header_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None))
         if hp: raise VerifyFailed('file header damaged in the output (%s)' % hp[0])
         pp = _page_problems(buf, getattr(m, '_info', None))
         if pp: raise VerifyFailed('page checksum mismatch in the output (%d, first: %s)' % (len(pp), pp[0]))

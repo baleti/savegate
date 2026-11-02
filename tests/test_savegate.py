@@ -836,6 +836,7 @@ def test_rvt_writer_noedit_is_stream_and_directory_identical(name, tmp_path):
     """c3x-rvtgap: load + save with NO edit through the write-lab editor: every stream byte-identical and every directory entry (name, type, colour, tree links, CLSID, state, times) equal; only the container layout (sector order, free tail, FAT, header pointers) may differ"""
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    if not os.path.exists(os.path.join(VGS, name)): pytest.skip('scene %s absent on this host' % name)
     o = str(tmp_path / 'o.rvt'); wledit.Editor(os.path.join(VGS, name)).save(o)
     A, B = cfb.CFB(open(os.path.join(VGS, name), 'rb').read()), cfb.CFB(open(o, 'rb').read())
     sa, sb = A.streams(), B.streams()

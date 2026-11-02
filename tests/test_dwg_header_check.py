@@ -320,3 +320,21 @@ def test_named_dimension_block_geometry_belongs_to_the_dimension():
     assert not AD._is_dim_block_ref({'block_ref': 'DOOR', 'kind': 'INSERT'})          # an ordinary insert's block is not owned by the insert
     assert not AD._is_dim_block_ref({'kind': 'DIM_LINEAR'})
     assert not AD._is_dim_block_ref({'block_ref': '', 'kind': 'LINE'})
+
+
+def test_r2000_undeclared_changes_are_limited_to_the_chain_neighbours_of_declared_add_delete():
+    from savegate.adapters import DwgAdapter
+    class O:
+        def __init__(s, raw): s.raw = raw; s.type = 19; s.data_bit = 0
+    class M:
+        def __init__(s, raws): s.version = 'AC1015'; s.objs = {h: O(r) for h, r in raws.items()}; s.blocks = {}
+        def entities(s): return []
+    a = DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
+    src = {h: b'\x01\x01\x00\x00\x00' for h in (0x40, 0x41, 0x42, 0x43)}
+    def run(changed, man):
+        out = dict(src)
+        for h in changed: out[h] = b'\x01\x01\x00\x00\x09'
+        a._pair = (M(src), M(out)); return [x for x in a.extra_checks(man) if x[0] == 'undeclared_object_bytes']
+    assert run([0x40], {'modified': []}) != []                    # nothing added/deleted: no neighbour excuse
+    assert run([0x40, 0x41], {'deleted': [0x99]}) == []           # two neighbours of one delete
+    assert run([0x40, 0x41, 0x42], {'deleted': [0x99]}) != []     # a third one is not a neighbour

@@ -449,13 +449,19 @@ class DwgAdapter:
         # three visual-style flag bits of common_entity) is invisible to it (5/295 CRC-fixed LINE flips accepted by every check). An object that is not declared
         # (modified/added/side effect) must therefore be byte-identical to the source.
         try:
-            if getattr(mo, 'version', 'AC1018') <= 'AC1015': raise _SkipRule()   # R2000 links entities in a chain: adding one rewrites its neighbours' bytes (2/5 AC1015 add-line saves refused in the false-positive sweep)
+            r2000 = getattr(mo, 'version', 'AC1018') <= 'AC1015'
             mod_, add_, dele_ = self.expand(manifest); decl_ = mod_ | add_ | dele_ | self.side_effects(manifest)
+            und = []
             for h, o in ms.objs.items():
                 p = mo.objs.get(h)
                 if p is None or p.raw == o.raw: continue
                 if 'obj:%x' % h in decl_ or 'ent:%x' % h in decl_: continue
-                bad.append(('undeclared_object_bytes', 'obj:%x' % h))
+                und.append(h)
+            # R2000 links entities in a chain: adding/deleting one rewrites the bytes of its (at most two) neighbours, whose decoded fields do not change. Allow that many
+            # undeclared changed objects per declared add/delete there, nothing else (item 151); other versions: none.
+            quota = 2 * (len(manifest.get('added', ())) + len(manifest.get('deleted', ()))) if r2000 else 0
+            if len(und) > quota:
+                for h in und[:5]: bad.append(('undeclared_object_bytes', 'obj:%x' % h))
         except _SkipRule:
             pass
         except Exception as e:

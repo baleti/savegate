@@ -226,6 +226,13 @@ def _r2000_regions_changed(ms, mo):
                         ok |= set(range(pbit // 8, (pbit + 32 + 7) // 8 + 1))
                     sz_ = int.from_bytes(ga[16:20], 'little'); ok |= {6 + sz_, 7 + sz_}
                     if any(ga[i] != gb[i] and i not in ok for i in range(len(ga))): out.append('second header')
+                    else:   # the seven pointer fields must carry the values of the OUTPUT's own locator table (item 101: writer does; a flipped bit inside a pointer is otherwise invisible)
+                        def f32(buf, pbit):
+                            v = 0
+                            for k in range(32): v |= ((buf[(pbit + k) >> 3] >> (7 - ((pbit + k) & 7))) & 1) << (8 * (k // 8) + 7 - (k % 8))
+                            return v
+                        exp = [(162, lb[2][0] + lb[2][1]), (352, lb[0][0]), (386, lb[0][1]), (428, lb[1][0]), (462, lb[1][1]), (504, lb[2][0]), (538, lb[2][1])]
+                        if any(f32(gb, pb) != v for pb, v in exp): out.append('second header pointers')
                 elif ga != gb: out.append('second header (zero gap family)')
         except Exception:
             pass

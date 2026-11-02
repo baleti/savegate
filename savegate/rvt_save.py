@@ -9,6 +9,12 @@ def save_string_edits(path, edits, cfg=None, dest=None):
     lib = os.environ.get('SAVEGATE_RVT_LIB') or os.path.expanduser('~/rvt-research/write-lab')
     for p in (lib, os.path.dirname(lib)):
         if p not in sys.path: sys.path.insert(0, p)
+    # c4x-dwgreadfuzz 207: audit the container BEFORE the writer lab parses it (FAT loops, cross-linked chains, directory cycles reach the editor otherwise)
+    if not (cfg is not None and getattr(cfg, 'allow_damaged_edit', False)):
+        import rvt_integrity
+        bad = rvt_integrity.audit(path)
+        if bad:
+            raise sg.VerifyFailed('the SOURCE file is damaged (%d container problem(s), first: %s %s); nothing was edited or written.' % (len(bad), bad[0][0], bad[0][1]), dict(source_damage=[list(x) for x in bad[:20]]))
     import wledit
     ed = wledit.Editor(path)
     parts = set(); expect = {}

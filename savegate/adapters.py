@@ -269,6 +269,7 @@ class RvtAdapter:
         try: S = cfb.CFB(bytes(buf)).streams()
         except Exception as ex: return ['container unreadable: %s' % ex]
         for n, e in S.items():
+            if len(e.data) != e.size: errs.append('%s: %d bytes readable of %d declared (FAT chain damaged/truncated)' % (n, len(e.data), e.size)); continue   # c4x-rvtgap
             if n in rvtw.PLAIN or n.startswith('\x05'): continue      # OLE property-set streams are plain
             d = e.data
             if d[:5] == b'<?xml' or d[:2] == b'\x1f\x8b': continue

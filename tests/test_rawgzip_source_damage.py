@@ -19,3 +19,16 @@ def test_identity_save_keeps_formats_latest(f, tmp_path):
     b = open(S + f, 'rb').read(); p = str(tmp_path / 'in.rfa'); d = str(tmp_path / 'out.rfa'); open(p, 'wb').write(b)
     core.save_as(core.open_doc(p, A, journal=False), b, d)
     assert cfb.CFB(open(d, 'rb').read()).streams()['Formats/Latest'].data == cfb.CFB(b).streams()['Formats/Latest'].data
+
+
+def test_fat_chain_cut_makes_streams_short_and_is_reported(tmp_path):
+    """c4x-rvtgap: a FAT entry forced to ENDOFCHAIN left a stream shorter than its directory size; the old gate saved such a source back unchanged (accepted)."""
+    import struct
+    f = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(f): pytest.skip('public sample missing')
+    src = open(f, 'rb').read(); A = adapters.RvtAdapter()
+    assert A.source_damage(src) == []
+    off = (struct.unpack_from('<I', src, 76)[0] + 1) * (1 << struct.unpack_from('<H', src, 30)[0])
+    for i in (4, 23, 35):
+        b = bytearray(src); struct.pack_into('<I', b, off + 4 * i, 0xFFFFFFFE)
+        assert any('declared' in e for e in A.source_damage(bytes(b))), i

@@ -707,3 +707,19 @@ def test_single_bit_flip_in_header_bytes_that_no_edit_touches_is_refused(tmp_pat
     with pytest.raises(sg.SaveError):
         sg.save(doc, bytes(b), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
     assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('which,off', [('root', 40), ('root', 72), ('root', 69), ('storage', 120), ('storage', 116), ('storage', 30), ('small', 62)])
+def test_directory_entry_padding_sibling_and_storage_size_flips_are_refused(tmp_path, which, off):
+    import savegate as sg, struct
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    buf = bytearray(_edited_bytes(SRC, 7, 'HorizontalZ')); c = cfb.CFB(bytes(buf)); ss = c.ss
+    e = {'root': c.entries[0], 'storage': [x for x in c.entries if x.type == 1][0], 'small': [x for x in c.streams().values() if 0 < x.size < c.cutoff][0]}[which]
+    sec = struct.unpack('<I', buf[48:52])[0]; per = ss // 128
+    for _ in range(e.idx // per): sec = c.fat[sec]
+    buf[(sec + 1) * ss + (e.idx % per) * 128 + off] ^= 1
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError):
+        sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+    assert open(cur, 'rb').read() == before

@@ -700,12 +700,13 @@ class RvtAdapter:
 
     def snapshot(self, buf):
         import cfb
+        import struct
         c = cfb.CFB(buf)
         out = {'stream:' + k: _h(e.data) for k, e in c.streams().items()}
         out['meta:streams'] = repr(sorted(c.streams()))
         out['meta:sector'] = '%d' % c.major
         out['meta:hdr'] = _h(bytes(buf[8:24]) + bytes(buf[24:44]) + bytes(buf[56:60]) + bytes(buf[64:72]))      # c4x-rvtgap: version, byte order, shifts, reserved, directory-sector count, mini cutoff: not part of any edit (the writer reproduces them)
-        out['meta:dirmeta'] = _h(repr([(e.name, e.type, bytes(e.clsid), e.state, e.color) for e in c.entries]).encode())      # c4x-rvtgap: directory-entry clsid/state/colour changes are not part of any edit (times are free)
+        out['meta:dirmeta'] = _h(repr([(e.name, e.type, bytes(e.clsid), e.state, e.color, bytes(e.raw)[struct.unpack_from('<H', e.raw, 64)[0]:64], bytes(e.raw)[68:80], bytes(e.raw)[116:128] if e.type == 1 else b'') for e in c.entries]).encode())      # c4x-rvtgap: directory-entry clsid/state/colour changes are not part of any edit (times are free)
         if self.elements_fn:
             try: els = self.elements_fn(buf)
             except Exception as ex: raise VerifyFailed('element view of the file could not be built (%s: %s)' % (type(ex).__name__, str(ex)[:120]))      # c4x-rvtgap: a file the reader cannot decode is not verifiable: refuse as VerifyFailed (not a DiskError)

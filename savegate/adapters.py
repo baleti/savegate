@@ -34,6 +34,13 @@ def _page_problems(buf, info):
     return out
 
 
+def _preamble_snap(buf):
+    """R2004+ files: bytes 0x00..0x7F of the file (version, maintenance, preview/summary/VBA seekers, codepage, security flags) have NO checksum and the reader ignores them,
+    but the writer copies them verbatim (measured: no-edit rewrite of a real AC1032 keeps all 128 bytes). A save that alters them is a writer bug (c4x-dwgreadfuzz item 75b)."""
+    if bytes(buf[:6]) in (b'AC1018', b'AC1024', b'AC1027', b'AC1032'): return _h(bytes(buf[:0x80]))
+    return None
+
+
 def _header_problems(buf):
     """R2004/R2010/R2013/R2018 (AC1018, AC1024, AC1027, AC1032) file header: the encrypted 0x6C-byte block at 0x80 carries the magic 'AcFssFcAJMB' and a CRC32 (plain zlib crc32 over the
     decrypted block with the CRC field zeroed). The reader ignores both, AutoCAD does not (c4x-dwgreadfuzz item 75: 24/25 single-bit header flips were accepted before this check)."""
@@ -137,6 +144,9 @@ class DwgAdapter:
                 for k in list(d): d[k] = guard(d[k])
             M._proxy_entity = guard(saved[2])
             snaps = [self._snap(m, same) for m in (ms, mo)]
+            for sn, bb in zip(snaps, (src, out)):
+                pa = _preamble_snap(bb)
+                if pa is not None: sn['file_preamble'] = pa
         finally:
             M.ENT_DECODERS.clear(); M.ENT_DECODERS.update(saved[0]); M.CLASS_DECODERS.clear(); M.CLASS_DECODERS.update(saved[1]); M._proxy_entity = saved[2]
         return snaps

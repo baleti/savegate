@@ -29,3 +29,13 @@ def test_preamble_invariants_and_truncation():
     b = make(); b[8] = 1; assert _header_problems(bytes(b))
     b = make(); b[0x29] = 1; assert _header_problems(bytes(b))
     assert _header_problems(bytes(make())[:0x90])
+
+
+def test_preamble_snapshot_changes_with_any_preamble_byte():
+    from savegate.adapters import _preamble_snap
+    a = bytes(make()); assert _preamble_snap(a) == _preamble_snap(bytes(a))
+    for off in (0x0B, 0x0D, 0x13, 0x20, 0x30, 0x7F):
+        b = bytearray(a); b[off] ^= 1
+        assert _preamble_snap(bytes(b)) != _preamble_snap(a), off
+    b = bytearray(a); b[0x80] ^= 1; assert _preamble_snap(bytes(b)) == _preamble_snap(a)   # encrypted block is covered by _header_problems, not this
+    assert _preamble_snap(b'AC1015' + bytes(300)) is None

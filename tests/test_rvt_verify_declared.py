@@ -185,3 +185,22 @@ def test_two_processes_saving_the_same_file_never_lose_or_mix_edits(tmp_path):
     # each saved edit is present, each refused edit is absent, nothing else changed
     assert bool(d7) == (res[7] == 'saved') and bool(d0) == (res[0] == 'saved'), (res, d7, d0)
     assert not [n for n in os.listdir(tmp_path) if n.endswith('.sgtmp')]
+
+
+@pytest.mark.parametrize('step', ['before_replace', 'after_replace'])
+def test_kill9_during_an_rvt_save_leaves_old_or_new_and_the_next_save_works(tmp_path, step):
+    import subprocess, signal
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    code = ("import os,signal,sys\nsys.path.insert(0,%r)\nimport savegate as sg\nfrom savegate import atomic, rvt_save\n"
+            "atomic._hook = lambda s: os.kill(os.getpid(), signal.SIGKILL) if s == %r else None\n"
+            "rvt_save.save_string_edits(%r, [(7,'FillPattern.m_name','HorizontalK')], sg.Config(allow_overwrite=True, require_gate=False))\n") % (os.path.join(os.path.dirname(__file__), '..'), step, cur)
+    r = subprocess.run([sys.executable, '-c', code], env=dict(os.environ), capture_output=True)
+    assert r.returncode == -signal.SIGKILL, r.stderr[-300:]
+    now = open(cur, 'rb').read()
+    if now == open(SRC, 'rb').read(): pass      # old
+    else: V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalK'})      # or fully new and valid
+    import savegate as sg
+    from savegate import rvt_save, atomic
+    atomic.sweep_stale_temps(str(tmp_path), max_age=-1)
+    rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalL')], sg.Config(allow_overwrite=True, require_gate=False))
+    V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalL'})

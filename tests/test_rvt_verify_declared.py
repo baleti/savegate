@@ -42,3 +42,11 @@ def test_gate_manifest_expect_accepts_the_intended_value_and_refuses_another(tmp
     import savegate as sg
     _gate(tmp_path, {0: {'SymbolInfo.m_name': 'LinearXY'}})
     with pytest.raises(sg.VerifyFailed): _gate(tmp_path, {0: {'SymbolInfo.m_name': 'Linear2'}})
+
+
+def test_verify_new_refuses_an_id_that_already_exists_in_the_source():
+    with pytest.raises(ValueError): V.verify_new(SRC, GEN1, 0, None, {})
+
+
+def test_verify_new_refuses_an_id_missing_from_the_output():
+    with pytest.raises(ValueError): V.verify_new(SRC, GEN1, 99999999, None, {})

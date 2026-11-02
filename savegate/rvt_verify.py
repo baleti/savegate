@@ -33,3 +33,23 @@ def verify_declared(src_path, out_path, eid, expected, lib=None):
     if extra or miss or wrong:
         raise ValueError('el:%s: declared element differs from the intent (unexpected %s, not changed %s, wrong value %s)' % (eid, extra[:5], miss[:5], wrong[:5]))
     return True
+
+
+def verify_new(src_path, out_path, new_id, clone_of=None, expected=None, lib=None):
+    """added element: new_id must NOT decode in the source, must decode in the output; with clone_of, every field of the new record (ids excluded)
+    must equal the same field of that source element except the ones named in `expected`, which must hold exactly those values."""
+    lib = lib or os.environ.get('SAVEGATE_RVT_LIB') or os.path.expanduser('~/rvt-research/write-lab')
+    try: _fields(src_path, new_id, lib); raise ValueError('el:%s already exists in the source: it is not an added element' % new_id)
+    except ValueError as e:
+        if 'already exists' in str(e): raise
+    n = _fields(out_path, new_id, lib)
+    exp = {k: str(v) for k, v in (expected or {}).items()}
+    if clone_of is not None:
+        o = _fields(src_path, clone_of, lib)
+        if len(o) != len(n): raise ValueError('el:%s: field structure differs from its clone source el:%s (%d vs %d fields)' % (new_id, clone_of, len(n), len(o)))
+        bad = [x[1] for x, y in zip(o, n) if x != y and 'm_id' not in x[1] and not (x[1] in exp and str(y[2]) == exp[x[1]])]
+        if bad: raise ValueError('el:%s differs from its clone source el:%s in unexpected fields %s' % (new_id, clone_of, sorted(set(bad))[:5]))
+    got = {name: str(v) for _, name, v in n}
+    wrong = sorted(k for k in exp if got.get(k) != exp[k])
+    if wrong: raise ValueError('el:%s: fields %s do not hold the intended values' % (new_id, wrong[:5]))
+    return True

@@ -509,8 +509,13 @@ class RvtAdapter:
         with tempfile.TemporaryDirectory() as d:
             a = os.path.join(d, 'a.rvt'); b = os.path.join(d, 'b.rvt')
             open(a, 'wb').write(bh[0]); open(b, 'wb').write(bh[1])
+            added = {str(x).split(':')[-1] for x in manifest.get('added', ())}
             for eid, fields in ex.items():
-                try: rvt_verify.verify_declared(a, b, int(str(eid).split(':')[-1]), fields)
+                try:
+                    i = int(str(eid).split(':')[-1])
+                    if str(i) in added:      # fields may carry {'__clone_of__': <id>}
+                        f = dict(fields); co = f.pop('__clone_of__', None); rvt_verify.verify_new(a, b, i, co, f)
+                    else: rvt_verify.verify_declared(a, b, i, fields)
                 except Exception as e: bad.append(('declared_element_mismatch', '%s: %s' % (type(e).__name__, str(e)[:200])))
         return bad
 

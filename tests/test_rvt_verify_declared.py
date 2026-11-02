@@ -529,3 +529,26 @@ def test_fat_chain_damage_in_an_otherwise_valid_output_is_refused(tmp_path, mode
         sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
     print('FAT', mode, type(ei.value).__name__, str(ei.value)[:110])
     assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('mode', ['case_rename', 'duplicate_name'])
+def test_renamed_or_duplicate_directory_entry_in_the_output_is_refused(tmp_path, mode):
+    import savegate as sg
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    c = cfb.CFB(_edited_bytes(SRC, 7, 'HorizontalZ'))
+    st = c.streams(); e = st['Global/Latest']
+    def setname(ent, name):
+        raw = bytearray(ent.raw); n = name.encode('utf-16-le') + b'\0\0'
+        raw[0:64] = n.ljust(64, b'\0'); raw[64:66] = len(n).to_bytes(2, 'little'); ent.raw = bytes(raw)
+    if mode == 'case_rename': setname(e, 'LATEST' if e.name == 'Latest' else e.name.swapcase())
+    else: setname(st['Global/PartitionTable'], e.name)
+    out = str(tmp_path / 'm.rfa'); cfb.write(c, out)
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    try:
+        sg.save(doc, open(out, 'rb').read(), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}}); verdict = 'ACCEPTED'
+    except sg.SaveError as ex:
+        verdict = 'REFUSED ' + str(ex)[:100]
+    print('DIRNAME', mode, verdict)
+    assert verdict.startswith('REFUSED')
+    assert open(cur, 'rb').read() == before

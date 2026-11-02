@@ -90,3 +90,12 @@ def test_light_model_gives_the_same_fields_as_the_full_model():
     b = V.field_diff(SRC, GEN1, 0, only={'Partitions/67'})[0]
     assert a == b and a
     with pytest.raises(ValueError): V.field_diff(SRC, GEN1, 0, only={'Partitions/1'})      # element not in a loaded partition: not silently accepted
+
+
+def test_gate_expect_with_wrong_declared_partition_is_refused(tmp_path):
+    import savegate as sg
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur)
+    with pytest.raises(sg.VerifyFailed):
+        sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(GEN1, 'rb').read(),
+                {'modified': ['stream:Partitions/66', 'el:0'], 'expect': {0: {'SymbolInfo.m_name': 'LinearXY'}}})
+    assert open(cur, 'rb').read() == open(SRC, 'rb').read()      # original untouched

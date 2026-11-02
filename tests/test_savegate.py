@@ -918,7 +918,7 @@ def test_rvt_edit_on_rosetta_scenes_changes_one_partition_and_only_the_edited_el
         try: log = ed.trace(e)[3]
         except Exception: continue
         for l in log:
-            if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None': cand = (e, l[1], l[4]); break
+            if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit(): cand = (e, l[1], l[4]); break
         if cand: break
     assert cand
     before = {}
@@ -986,7 +986,7 @@ def test_rvt_family_edit_2024_2026_valid_and_other_years_refused(tmp_path):
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit'); import hashlib
     for y in ('2024', '2026'):
         src = os.path.join(RFA, 'racbasicsamplefamily-%s.rfa' % y); ed = wledit.Editor(src); ids = sorted(ed.m.ids)
-        log = ed.trace(0)[3]; l = next(l for l in log if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None')
+        log = ed.trace(0)[3]; l = next(l for l in log if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit())
         ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); o = str(tmp_path / ('o%s.rfa' % y)); ed.save(o); b = open(o, 'rb').read()
         ad = RvtAdapter(); assert ad.sniff(b) == y and ad.source_damage(b) == [] and ad.validate(b)
         assert sorted(wledit.Editor(o).m.ids) == ids
@@ -1141,7 +1141,7 @@ def test_rvt_string_edit_unicode_roundtrips_and_bad_edits_are_refused_before_any
             try: log = ed.trace(e)[3]
             except Exception: continue
             for l in log:
-                if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]: return e, l[1], l[4]
+                if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit() and 'Identifier' not in l[1]: return e, l[1], l[4]
     ad = RvtAdapter()
     for i, new in enumerate(['Ünï中文', 'a\U0001F600b', 'a\x00b', '']):
         ed = wledit.Editor(src); e, f, v = cand(ed); o = str(tmp_path / ('o%d.rte' % i))
@@ -1220,7 +1220,7 @@ def test_rvt_second_edit_of_the_same_record_or_in_ascending_order_is_refused_not
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
     src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src)
-    ss = lambda e_: [l for l in ed.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+    ss = lambda e_: [l for l in ed.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit() and 'Identifier' not in l[1]]
     a, b = ss(16)[:2]; assert a[1] != b[1]
     ed.set_string(16, b[1], b[4][:-1], match=b[4])
     with pytest.raises(ValueError): ed.set_string(16, a[1], a[4] + 'XY', match=a[4])       # same record again
@@ -1253,7 +1253,7 @@ def test_rvt_set_strings_batch_any_order_and_two_fields_of_one_record(tmp_path):
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
     src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src); ids = sorted(ed.m.ids)
-    ss = lambda e_, ed_=ed: [l for l in ed_.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+    ss = lambda e_, ed_=ed: [l for l in ed_.trace(e_)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit() and 'Identifier' not in l[1]]
     a, b = ss(16)[:2]; assert a[1] != b[1]
     e2 = next(e for e in ids if e > 16 and ed.trace(e)[0] == ed.trace(16)[0] and ss(e)); c = ss(e2)[0]
     key = lambda e_, ed_: [(l[0], l[1], l[4]) for l in ed_.trace(e_)[3]]
@@ -1276,7 +1276,7 @@ def test_rvt_gate_refuses_output_where_a_neighbour_element_lost_its_record_even_
     src = os.path.join(ROS, '2024_roof_ceiling_base.rte')
     def make(bug):
         ed = wledit.Editor(src)
-        ss = [l for l in ed.trace(16)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and 'Identifier' not in l[1]]
+        ss = [l for l in ed.trace(16)[3] if isinstance(l[4], str) and 1 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None' and not l[4].isdigit() and 'Identifier' not in l[1]]
         a, b = ss[:2]; ed.set_string(16, b[1], b[4][:-1], match=b[4])
         if bug: ed._lowest = {}; ed.set_string(16, a[1], a[4] + 'XY', match=a[4])
         o = str(tmp_path / ('bug' if bug else 'ok')); ed.save(o); return open(o, 'rb').read()

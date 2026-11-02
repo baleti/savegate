@@ -154,9 +154,9 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
     if overwrite and os.path.abspath(dest) == doc.path:
         return _save(doc, new_bytes, manifest, False, verify)
     if doc.journal: doc.journal.log('save_as_begin', dest=dest, size=len(new_bytes))
+    dm = doc.adapter.source_damage(doc.buf) if hasattr(doc.adapter, 'source_damage') else []      # c4x-rvtgap: BEFORE the verify, so damage already in the source is known and not counted as new damage of the copy
     tmp, rep = _produce(doc, new_bytes, manifest, dest, verify)
     if hasattr(doc.adapter, 'source_damage'):
-        dm = doc.adapter.source_damage(doc.buf)
         if dm: rep.setdefault('warnings', []).append('the SOURCE file is damaged (%d problem(s), first: %s); the copy carries the same damage and is not confirmed to open in the application' % (len(dm), dm[0]))
     backup = None
     try:

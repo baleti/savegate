@@ -204,3 +204,18 @@ def test_kill9_during_an_rvt_save_leaves_old_or_new_and_the_next_save_works(tmp_
     atomic.sweep_stale_temps(str(tmp_path), max_age=-1)
     rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalL')], sg.Config(allow_overwrite=True, require_gate=False))
     V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalL'})
+
+
+def test_damaged_formats_latest_in_the_source_refuses_in_place_save_and_warns_on_save_as(tmp_path):
+    import savegate as sg, olefile
+    from savegate import rvt_save
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    o = olefile.OleFileIO(cur, write_mode=True); d = bytearray(o.openstream('Formats/Latest').read()); d[len(d) // 2] ^= 0x10; o.write_stream('Formats/Latest', bytes(d)); o.close()
+    before = open(cur, 'rb').read()
+    with pytest.raises(sg.SaveError) as ei:
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalD')], sg.Config(allow_overwrite=True, require_gate=False))
+    assert open(cur, 'rb').read() == before, 'the damaged original must stay as it was'
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)); dest = str(tmp_path / 'copy.rfa')
+    res = sg.save_as(doc, before, dest, {})
+    assert open(dest, 'rb').read() == before      # an unchanged rescue copy is allowed ...
+    assert any('damaged' in w for w in res.report.get('warnings', [])), res.report      # ... but is flagged as carrying the damage

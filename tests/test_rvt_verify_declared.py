@@ -268,3 +268,18 @@ def test_empty_or_non_ole_source_is_never_saved_over_or_changed(tmp_path, conten
     with pytest.raises(Exception):
         rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'Z')], cfg, dest=str(tmp_path / 'o.rfa'))
     assert not os.path.exists(str(tmp_path / 'o.rfa'))
+
+
+@pytest.mark.parametrize('spell', ['dotdot', 'symlink', 'hardlink', 'case'])
+def test_save_as_onto_the_source_by_another_spelling_never_bypasses_the_overwrite_gate(tmp_path, spell):
+    import savegate as sg
+    from savegate import rvt_save
+    d = tmp_path / 'a'; d.mkdir(); cur = str(d / 'f.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    if spell == 'dotdot': dest = str(d / '..' / 'a' / 'f.rfa')
+    elif spell == 'symlink': dest = str(tmp_path / 'ln.rfa'); os.symlink(cur, dest)
+    elif spell == 'hardlink': dest = str(tmp_path / 'hl.rfa'); os.link(cur, dest)
+    else: dest = str(d / 'F.rfa')
+    cfg = sg.Config(allow_overwrite=False, require_gate=False)      # overwrite OFF (the default)
+    try: rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], cfg, dest=dest)
+    except sg.SaveError: pass
+    assert open(cur, 'rb').read() == before, 'Save As reached the source through %s while overwrite is OFF' % spell

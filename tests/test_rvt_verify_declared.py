@@ -297,3 +297,57 @@ def test_batch_with_one_invalid_edit_writes_nothing_all_or_none(tmp_path):
             rvt_save.save_string_edits(cur, edits, cfg)
         assert open(cur, 'rb').read() == before, 'a partial batch reached the file: %r' % (edits,)
         assert os.listdir(tmp_path) == ['c.rfa']
+
+
+def _edited_bytes(path, eid=7, val='HorizontalZ'):
+    import sys, tempfile
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+    import wledit
+    ed = wledit.Editor(path); ed.set_strings([(eid, 'FillPattern.m_name', val)])
+    with tempfile.TemporaryDirectory() as d:
+        o = os.path.join(d, 'o.rfa'); ed.save(o); return open(o, 'rb').read()
+
+
+def test_source_replaced_by_another_file_between_open_and_save_is_a_conflict(tmp_path):
+    import savegate as sg
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur)
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)); new = _edited_bytes(SRC)
+    other = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+    for repl in (open(other, 'rb').read(), open(SRC, 'rb').read()[:-1] + b'\x01'):      # different file / same size, one byte different
+        open(cur, 'wb').write(repl)
+        with pytest.raises(sg.Conflict):
+            sg.save(doc, new, {})
+        assert open(cur, 'rb').read() == repl, 'the newer file on disk must not be overwritten'
+
+
+@pytest.mark.parametrize('year', ['2023', '2025'])
+def test_unsupported_year_is_refused_in_place_with_original_intact(tmp_path, year):
+    import savegate as sg
+    from savegate import rvt_save
+    src = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-%s.rfa' % year)
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(src, cur); before = open(cur, 'rb').read()
+    with pytest.raises(sg.SaveError):
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], sg.Config(allow_overwrite=True, require_gate=True))
+    assert open(cur, 'rb').read() == before and os.listdir(tmp_path) == ['c.rfa']
+
+
+def test_wrong_expected_value_in_manifest_is_refused(tmp_path):
+    import savegate as sg
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read(); new = _edited_bytes(SRC, 7, 'HorizontalZ')
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    for exp in ({7: {'FillPattern.m_name': 'SomethingElse'}}, {8: {'FillPattern.m_name': 'HorizontalZ'}}):
+        with pytest.raises(sg.SaveError):
+            sg.save(doc, new, {'modified': ['stream:Partitions/67', 'el:7'], 'expect': exp})
+        assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason='root ignores dir modes')
+def test_save_as_into_a_read_only_directory_fails_cleanly(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); ro = tmp_path / 'ro'; ro.mkdir(); os.chmod(ro, 0o500)
+    try:
+        with pytest.raises(sg.SaveError):
+            rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], sg.Config(allow_overwrite=False, require_gate=False), dest=str(ro / 'o.rfa'))
+        assert os.listdir(ro) == []
+    finally: os.chmod(ro, 0o700)

@@ -211,10 +211,24 @@ def _r2000_regions_changed(ms, mo):
         ha, hb = F.read_r13_r2000(a), F.read_r13_r2000(b)
         la = {n: (s_, z) for n, s_, z in ha['locators']}; lb = {n: (s_, z) for n, s_, z in hb['locators']}
         out = []
-        if bytes(a[:0x0D]) + bytes(a[0x11:0x19]) != bytes(b[:0x0D]) + bytes(b[0x11:0x19]): out.append('file header')
+        if bytes(a[:0x19]) != bytes(b[:0x19]): out.append('file header')      # incl. the image seeker: the pre-header area is carried unchanged, so it cannot move (item 138: seeker flip accepted)
         ta = 0x19 + 9 * len(ha['locators']) + 2; tb = 0x19 + 9 * len(hb['locators']) + 2
         if ta != tb or bytes(a[ta:la[0][0]]) != bytes(b[tb:lb[0][0]]): out.append('pre-header area')
         if 1 not in la or 1 not in lb or la[1][1] != lb[1][1] or bytes(a[la[1][0]:la[1][0] + la[1][1]]) != bytes(b[lb[1][0]:lb[1][0] + lb[1][1]]): out.append('classes section')
+        # second header (copy of the header variables behind the object map, 149 bytes, sentinel d47b21ce...): only the 7 patched 32-bit pointer fields and the section CRC may differ
+        try:
+            if 2 in la and 4 in la and 2 in lb and 4 in lb:
+                ga = bytes(a[la[2][0] + la[2][1]:la[4][0]]); gb = bytes(b[lb[2][0] + lb[2][1]:lb[4][0]])
+                if len(ga) != len(gb): out.append('second header size')
+                elif ga[:16] == bytes.fromhex('d47b21ce28939fbf53244009123caa01'):
+                    ok = set()
+                    for pbit in (162, 352, 386, 428, 462, 504, 538):
+                        ok |= set(range(pbit // 8, (pbit + 32 + 7) // 8 + 1))
+                    sz_ = int.from_bytes(ga[16:20], 'little'); ok |= {6 + sz_, 7 + sz_}
+                    if any(ga[i] != gb[i] and i not in ok for i in range(len(ga))): out.append('second header')
+                elif ga != gb: out.append('second header (zero gap family)')
+        except Exception:
+            pass
         da, ok_a, _ = F.section_r13_r2000(a, (0,) + la[0]); db, ok_b, _ = F.section_r13_r2000(b, (0,) + lb[0])
         if ok_a and not ok_b: out.append('header variables CRC')
         if len(da) != len(db): out.append('header variables size')

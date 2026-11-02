@@ -272,6 +272,34 @@ def test_r2000_regions_outside_the_objects_must_not_change():
         b = bytearray(a); b[0x19 + 9 * 2 + 2 + 5] ^= 1; assert 'pre-header area' in AD._r2000_regions_changed(M(a), M(bytes(b)))
         b = bytearray(a); b[-3] ^= 1; assert 'classes section' in AD._r2000_regions_changed(M(a), M(bytes(b)))
         b = bytearray(a); b[0x0B] ^= 1; assert 'file header' in AD._r2000_regions_changed(M(a), M(bytes(b)))
-        b = bytearray(a); b[0x0D] ^= 1; assert AD._r2000_regions_changed(M(a), M(bytes(b))) == []                       # image seeker may move
+        b = bytearray(a); b[0x0D] ^= 1; assert 'file header' in AD._r2000_regions_changed(M(a), M(bytes(b)))           # image seeker cannot move: the area behind it is carried unchanged
+    finally:
+        dwghdr.decode_header = saved
+
+
+def test_r2000_second_header_only_its_pointer_fields_and_crc_may_change():
+    import struct, savegate.adapters as AD
+    AD.DwgAdapter()
+    import dwgfmt, dwghdr
+    class M:
+        def __init__(s, buf): s.version = 'AC1015'; s._buf = buf
+    sent = bytes.fromhex('d47b21ce28939fbf53244009123caa01')
+    def build(gap):
+        hv = bytearray(16) + struct.pack('<I', 30) + bytes(30) + b'\0\0'
+        c = dwgfmt.crc16(bytes(hv[16:50]), 0xC0C1); hv[50:52] = struct.pack('<H', c)
+        locs = 0x19 + 9 * 5 + 2
+        b = bytearray(locs) + b'P' * 8
+        o0 = len(b); b += hv; o1 = len(b); b += b'C' * 20; o2 = len(b); b += b'M' * 30; o4 = len(b) ; b += gap; o4 = len(b); b += b'\0' * 4
+        b[:6] = b'AC1015'; struct.pack_into('<I', b, 0x15, 5)
+        for i, (n, s_, z) in enumerate([(0, o0, len(hv)), (1, o1, 20), (2, o2, 30), (3, 0, 0), (4, o4, 4)]): struct.pack_into('<BII', b, 0x19 + 9 * i, n, s_, z)
+        return bytes(b)
+    gap = sent + struct.pack('<I', 129) + bytes(129)
+    a = build(gap); saved = dwghdr.decode_header
+    dwghdr.decode_header = lambda h, v, s=0: {'_seedpos': 30 * 8}
+    try:
+        base = len(a) - 4 - len(gap)
+        assert AD._r2000_regions_changed(M(a), M(a)) == []
+        b = bytearray(a); b[base + 162 // 8 + 1] ^= 1; assert AD._r2000_regions_changed(M(a), M(bytes(b))) == []      # a pointer field
+        b = bytearray(a); b[base + 100] ^= 1; assert 'second header' in AD._r2000_regions_changed(M(a), M(bytes(b)))   # anything else
     finally:
         dwghdr.decode_header = saved

@@ -49,5 +49,34 @@ class R2000Sections(unittest.TestCase):
         self.assertEqual(prob(b'AC1032' + bytes(100)), [])
 
 
+@unittest.skipIf(F is None, 'dwg lib not found')
+class R2000Preview(unittest.TestCase):
+    @staticmethod
+    def build(sizes=(80, 200)):
+        from savegate.adapters import _r2000_preview_problems as pp
+        SENT = bytes.fromhex('1f256d07d43628289d57ca3f9d44102b')
+        cnt = len(sizes); body = []
+        pos = 0x60 + 21 + 9 * cnt; ents = b''
+        for i, sz in enumerate(sizes):
+            code = 1 if i == 0 else 2
+            ents += struct.pack('<BII', code, pos, sz); body.append(struct.pack('<IiiH', 40, 4, 4, 1).ljust(sz, b'\0') if code == 2 else bytes(sz)); pos += sz
+        n = 1 + 9 * cnt + sum(sizes)
+        blk = SENT + struct.pack('<I', n) + bytes([cnt]) + ents + b''.join(body) + bytes(x ^ 0xFF for x in SENT)
+        hdr = bytearray(b'AC1015' + bytes(0x60 - 6)); struct.pack_into('<I', hdr, 0x0D, 0x60)
+        return bytes(hdr) + blk, pp
+
+    def test_clean_and_no_preview(self):
+        b, pp = self.build(); self.assertEqual(pp(b), [])
+        h = bytearray(b); struct.pack_into('<I', h, 0x0D, 0); self.assertEqual(pp(bytes(h)), [])
+
+    def test_structural_damage_reported(self):
+        b, pp = self.build()
+        for off, what in ((0x60, 'start sentinel'), (0x60 + 16, 'size field'), (0x60 + 21 + 1, 'entry start'), (len(b) - 1, 'end sentinel'), (0x60 + 21 + 18 + 80, 'BMP biSize')):
+            m = bytearray(b); m[off] ^= 0x01; self.assertTrue(pp(bytes(m)), what)
+
+    def test_pixel_flip_is_not_detectable(self):
+        b, pp = self.build(); m = bytearray(b); m[0x60 + 21 + 18 + 80 + 30] ^= 0xFF; self.assertEqual(pp(bytes(m)), [])
+
+
 if __name__ == '__main__':
     unittest.main()

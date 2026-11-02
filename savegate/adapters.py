@@ -111,6 +111,38 @@ def _dangling_after_delete(ms, mo, limit=20):
     return out
 
 
+def _r2000_preview_problems(buf):
+    """AC1015 preview image block (c4x-dwgreadfuzz 233): the only large region with no CRC. Structure only: start sentinel, RL size == 1 + 9*count + sum(sizes), contiguous entry
+    offsets, end sentinel at its place, BMP entries (code 2) with a BITMAPINFOHEADER (biSize 40, planes 1). Pixel flips are not detectable. [] = fine or no preview."""
+    import struct
+    if bytes(buf[:6]) != b'AC1015' or len(buf) < 0x11: return []
+    img = struct.unpack_from('<I', buf, 0x0D)[0]
+    if img == 0: return []
+    SENT = bytes.fromhex('1f256d07d43628289d57ca3f9d44102b')
+    out = []
+    try:
+        if bytes(buf[img:img + 16]) != SENT: return ['preview: start sentinel']
+        n = struct.unpack_from('<I', buf, img + 16)[0]; cnt = buf[img + 20]
+        ents = [struct.unpack_from('<BII', buf, img + 21 + 9 * i) for i in range(cnt)]
+        if n != 1 + 9 * cnt + sum(e[2] for e in ents): out.append('preview: size field %d != entries %d' % (n, 1 + 9 * cnt + sum(e[2] for e in ents)))
+        pos = img + 21 + 9 * cnt
+        for code, start, size in ents:
+            if start != pos: out.append('preview: entry code %d starts at %d, expected %d' % (code, start, pos))
+            if code == 2 and size >= 40:
+                bsz, _w, _h, planes = struct.unpack_from('<IiiH', buf, start)
+                if bsz != 40 or planes != 1: out.append('preview: BMP header (biSize %d, planes %d)' % (bsz, planes))
+            pos = start + size
+        if img + 20 + n + 16 > len(buf): out.append('preview: end sentinel beyond the file')
+        elif bytes(buf[img + 20 + n:img + 20 + n + 16]) != bytes(x ^ 0xFF for x in SENT) and bytes(buf[img + 20 + n:img + 20 + n + 16]) != PREVIEW_END_SENT:
+            out.append('preview: end sentinel')
+    except (struct.error, IndexError):
+        out.append('preview: unreadable')
+    return out
+
+
+PREVIEW_END_SENT = bytes.fromhex('e0da92f8 2bc9d7d7 62a835c0 62bbefd4'.replace(' ', ''))
+
+
 def _header_problems(buf):
     """R2004/R2010/R2013/R2018 (AC1018, AC1024, AC1027, AC1032) file header: the encrypted 0x6C-byte block at 0x80 carries the magic 'AcFssFcAJMB' and a CRC32 (plain zlib crc32 over the
     decrypted block with the CRC field zeroed). The reader ignores both, AutoCAD does not (c4x-dwgreadfuzz item 75: 24/25 single-bit header flips were accepted before this check)."""
@@ -430,7 +462,7 @@ class DwgAdapter:
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _r2000_section_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200] + self._handle_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _r2000_section_problems(buf) + _r2000_preview_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200] + self._handle_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 

@@ -241,3 +241,16 @@ def test_truncated_or_padded_output_is_refused_by_the_gate(tmp_path, how):
     with pytest.raises(sg.SaveError):
         sg.save_as(doc, out, dest, {})
     assert not os.path.exists(dest) and open(cur, 'rb').read() == src
+
+
+@pytest.mark.parametrize('val', ['A\x00B', 'line1\r\nline2', 'tab\there', 'sep x', '\x01\x1f', 'emoji\U0001F600', 'lone\ud800s'])
+def test_control_and_odd_characters_in_an_edit_are_saved_exactly_or_refused_with_original_intact(tmp_path, val):
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read(); cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    try:
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', val)], cfg)
+    except Exception as e:
+        assert open(cur, 'rb').read() == before, 'refused (%s) but the original changed' % type(e).__name__
+        return
+    V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': val})      # accepted: must read back exactly

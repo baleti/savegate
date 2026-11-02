@@ -132,3 +132,15 @@ def test_declared_metadata_stream_change_is_refused(st, tmp_path):
     with pytest.raises(sg.VerifyFailed, match='metadata|element view'):      # Formats/Latest damage may already stop the element view
         sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(o, 'rb').read(), {'modified': ['stream:' + st]})
     assert open(cur, 'rb').read() == before
+
+
+def test_element_cache_key_changes_when_the_reader_code_changes(tmp_path, monkeypatch):
+    """c4x-rvtgap: the element snapshot cache was keyed by file hash only; after a reader change a stale cached source snapshot was diffed against a fresh output snapshot (80 spurious changed elements, legitimate save refused)."""
+    from savegate import rvt_elements as R
+    rd = tmp_path / 'reader'; rd.mkdir(); (rd / 'rvt_geometry.py').write_text('X = 1\n')
+    monkeypatch.setattr(R, '_STAMP', {})
+    k1 = R._cache_path(b'abc', '011', str(rd)); assert R._cache_path(b'abc', '011', str(rd)) == k1
+    (rd / 'rvt_geometry.py').write_text('X = 22\n'); R._STAMP.clear()
+    k2 = R._cache_path(b'abc', '011', str(rd)); assert k2 != k1
+    (rd / 'new_module.py').write_text('Y = 1\n'); R._STAMP.clear()
+    assert R._cache_path(b'abc', '011', str(rd)) not in (k1, k2)

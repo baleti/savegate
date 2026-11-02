@@ -14,15 +14,34 @@ def _geom_one(a):
         return eid, '|ERR ' + type(e).__name__
 
 
-def _cache_path(buf, flags):
+_STAMP = {}
+
+
+def _reader_stamp(reader_dir=None):
+    """c4x-rvtgap: a snapshot is only comparable with one made by the SAME reader code. The cache was keyed by the file hash alone, so after a reader change (other agents edit
+    ~/rvt-research daily) a cached source snapshot was compared with a freshly computed output snapshot: 80 spurious 'changed' elements and a refused legitimate save (seen 2026-11-02).
+    The stamp is a hash of name/size/mtime of the reader's .py files plus this module."""
+    rd = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
+    if rd in _STAMP: return _STAMP[rd]
+    h = hashlib.sha256()
+    try:
+        files = sorted(f for f in os.listdir(rd) if f.endswith('.py')) + ['write-lab/' + f for f in sorted(os.listdir(os.path.join(rd, 'write-lab'))) if f.endswith('.py')] if os.path.isdir(os.path.join(rd, 'write-lab')) else sorted(f for f in os.listdir(rd) if f.endswith('.py'))
+        for f in files:
+            st = os.stat(os.path.join(rd, f)); h.update(('%s %d %d;' % (f, st.st_size, st.st_mtime_ns)).encode())
+    except OSError: pass
+    st = os.stat(__file__); h.update(('self %d %d' % (st.st_size, st.st_mtime_ns)).encode())
+    _STAMP[rd] = h.hexdigest()[:8]; return _STAMP[rd]
+
+
+def _cache_path(buf, flags, reader_dir=None):
     base = os.environ.get('SAVEGATE_CACHE') or os.path.join(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')), 'savegate')
-    return os.path.join(base, 'elsnap', hashlib.sha256(buf).hexdigest()[:32] + flags + '.json')
+    return os.path.join(base, 'elsnap', hashlib.sha256(buf).hexdigest()[:32] + flags + '-' + _reader_stamp(reader_dir) + '.json')
 
 
 def elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_records=True):
     """Snapshot of every element; results are cached on disk by the SHA-256 of the file (a second Save of the same source, or the
     source of a chain of saves, costs nothing), geometry runs in SAVEGATE_RVT_WORKERS fork workers (default min(4, cpus))."""
-    cp = _cache_path(buf, '%d%d%d' % (with_geometry, with_params, with_records))
+    cp = _cache_path(buf, '%d%d%d' % (with_geometry, with_params, with_records), reader_dir)
     try: return {int(k): v for k, v in json.load(open(cp)).items()}
     except (OSError, ValueError): pass
     out = _elements(buf, reader_dir, with_geometry, with_params, with_records)

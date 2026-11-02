@@ -123,3 +123,21 @@ def test_every_gate_error_class_has_a_specific_user_message():
             assert n in rvt_save._MSG, n
             assert 'original' in rvt_save.user_message(c('x')).lower() or 'nothing' in rvt_save.user_message(c('x')).lower() or 'save as' in rvt_save.user_message(c('x')).lower()
     assert 'not touched' in rvt_save.user_message(RuntimeError('boom'))
+
+
+def test_rename_refused_by_the_os_leaves_original_and_no_debris(tmp_path, monkeypatch):
+    import savegate as sg, errno
+    from savegate import atomic, rvt_save
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    real = os.replace
+    def deny(a, b):
+        if os.path.abspath(str(b)) == os.path.abspath(cur): raise PermissionError(errno.EACCES, 'denied (file open elsewhere)')
+        return real(a, b)
+    monkeypatch.setattr(os, 'replace', deny)
+    with pytest.raises(sg.errors.SaveError) as ei:
+        rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], sg.Config(allow_overwrite=True, require_gate=False))
+    monkeypatch.undo()
+    assert open(cur, 'rb').read() == open(SRC, 'rb').read()
+    debris = [n for n in os.listdir(tmp_path) if n.endswith('.sgtmp') or n.startswith('.f.rfa.savegate')]
+    assert not [n for n in debris if n.endswith('.sgtmp')], debris
+    assert 'original' in rvt_save.user_message(ei.value).lower() or 'nothing' in rvt_save.user_message(ei.value).lower()

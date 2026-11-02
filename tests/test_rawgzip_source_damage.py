@@ -129,6 +129,6 @@ def test_declared_metadata_stream_change_is_refused(st, tmp_path):
     raw = open(src, 'rb').read(); c = cfb.CFB(raw); e = c.streams()[st]; d = bytearray(e.data); d[len(d) // 2] ^= 0x41; e.data = bytes(d)
     o = str(tmp_path / 'm.rfa'); cfb.write(c, o); cur = str(tmp_path / 'cur.rfa'); shutil.copy(src, cur)
     before = open(cur, 'rb').read()
-    with pytest.raises(sg.VerifyFailed, match='metadata'):
+    with pytest.raises(sg.VerifyFailed, match='metadata|element view'):      # Formats/Latest damage may already stop the element view
         sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(o, 'rb').read(), {'modified': ['stream:' + st]})
     assert open(cur, 'rb').read() == before

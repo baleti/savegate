@@ -429,3 +429,15 @@ def test_flipped_byte_in_any_non_partition_stream_is_refused_on_the_2026_family(
             refused += 1
             assert open(cur, 'rb').read() == before
     assert refused >= 2 * (len(others) - 1)
+
+
+@pytest.mark.parametrize('frac', [0.02, 0.1, 0.25, 0.4, 0.6, 0.75, 0.9, 0.98])
+def test_flip_in_the_edited_partition_outside_the_declared_record_is_refused(tmp_path, frac):
+    import savegate as sg, olefile
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    g = tmp_path / 'g.rfa'; g.write_bytes(_edited_bytes(SRC, 7, 'HorizontalZ'))
+    o = olefile.OleFileIO(str(g), write_mode=True); d = bytearray(o.openstream('Partitions/67').read()); d[int(len(d) * frac)] ^= 0x04; o.write_stream('Partitions/67', bytes(d)); o.close()
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError):
+        sg.save(doc, g.read_bytes(), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+    assert open(cur, 'rb').read() == before

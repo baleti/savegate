@@ -620,3 +620,64 @@ def test_long_string_growth_is_accepted_or_refused_cleanly_with_original_intact(
     else:
         with pytest.raises(sg.SaveError): sg.save(doc, b, man)
         assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('mode', ['minifat_selfloop', 'dir_sibling_selfloop', 'dir_child_selfloop', 'nfat_huge', 'dirstart_out_of_range', 'difat_selfloop', 'difat_out_of_range', 'minifat_start_out_of_range', 'ndir_sectors_huge'])
+def test_container_structure_attacks_on_the_output_are_refused_fast_with_original_intact(tmp_path, mode):
+    import savegate as sg, struct, signal
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    buf = bytearray(_edited_bytes(SRC, 7, 'HorizontalZ')); c = cfb.CFB(bytes(buf)); ss = c.ss
+    P = lambda o, v: buf.__setitem__(slice(o, o + 4), struct.pack('<I', v))
+    dstart = struct.unpack('<I', buf[48:52])[0]
+    def dir_off(idx):
+        sec = dstart; per = ss // 128
+        for _ in range(idx // per): sec = c.fat[sec]
+        return (sec + 1) * ss + (idx % per) * 128
+    root_child = struct.unpack('<I', bytes(buf[dir_off(0) + 76:dir_off(0) + 80]))[0]
+    if mode == 'minifat_selfloop':
+        small = [e for e in c.streams().values() if 0 < e.size < c.cutoff][0]
+        mf = struct.unpack('<I', buf[60:64])[0]; o = (mf + 1) * ss + small.start * 4; P(o, small.start)
+    elif mode == 'dir_sibling_selfloop': P(dir_off(root_child) + 68, root_child)
+    elif mode == 'dir_child_selfloop': P(dir_off(root_child) + 76, root_child)
+    elif mode == 'nfat_huge': P(44, 0x7FFFFFF0)
+    elif mode == 'dirstart_out_of_range': P(48, 0x7FFFFF00)
+    elif mode == 'difat_selfloop': P(68, 1); P(72, 1)
+    elif mode == 'difat_out_of_range': P(68, 0x7FFFFF00); P(72, 3)
+    elif mode == 'minifat_start_out_of_range': P(60, 0x7FFFFF00)
+    elif mode == 'ndir_sectors_huge' : P(40, 0x7FFFFFF0) if buf[26] == 4 else None
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    signal.alarm(60)
+    try:
+        try:
+            sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}}); verdict = 'ACCEPTED'
+        except sg.SaveError as ex: verdict = 'REFUSED ' + type(ex).__name__ + ' ' + str(ex)[:90]
+    finally: signal.alarm(0)
+    print('CONT', mode, verdict)
+    assert verdict.startswith('REFUSED')
+    assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('mode', ['fat_loop', 'dir_sibling_loop'])
+def test_source_with_container_loop_is_refused_fast_and_never_changed(tmp_path, mode):
+    import savegate as sg, struct, signal
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    buf = bytearray(open(SRC, 'rb').read()); c = cfb.CFB(bytes(buf)); ss = c.ss
+    if mode == 'fat_loop':
+        a = [e for e in c.streams().values() if e.size >= c.cutoff][0]; nxt = c.fat[a.start]
+        fat_ids = [x for x in struct.unpack('<109I', buf[76:76 + 436]) if x != 0xFFFFFFFF]
+        sec = fat_ids[nxt // (ss // 4)]; o = (sec + 1) * ss + (nxt % (ss // 4)) * 4; buf[o:o + 4] = struct.pack('<I', a.start)
+    else:
+        dstart = struct.unpack('<I', buf[48:52])[0]; rc = struct.unpack('<I', buf[(dstart + 1) * ss + 76:(dstart + 1) * ss + 80])[0]
+        o = (dstart + 1) * ss + rc * 128 + 68; buf[o:o + 4] = struct.pack('<I', rc)
+    cur = tmp_path / 's.rfa'; cur.write_bytes(bytes(buf))
+    signal.alarm(60)
+    try:
+        try:
+            doc = sg.open_doc(str(cur), None, sg.Config(allow_overwrite=True, require_gate=False))
+            r = sg.save(doc, bytes(buf), {'modified': []}); verdict = 'ACCEPTED'
+        except Exception as ex: verdict = 'REFUSED ' + type(ex).__name__ + ' ' + str(ex)[:90]
+    finally: signal.alarm(0)
+    print('SRCLOOP', mode, verdict)
+    assert verdict.startswith('REFUSED')
+    assert cur.read_bytes() == bytes(buf)

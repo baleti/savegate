@@ -99,3 +99,17 @@ def test_gate_expect_with_wrong_declared_partition_is_refused(tmp_path):
         sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(GEN1, 'rb').read(),
                 {'modified': ['stream:Partitions/66', 'el:0'], 'expect': {0: {'SymbolInfo.m_name': 'LinearXY'}}})
     assert open(cur, 'rb').read() == open(SRC, 'rb').read()      # original untouched
+
+
+def test_reference_app_path_edits_in_place_through_the_gate_and_save_as_keeps_original(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    cp = str(tmp_path / 'copy.rfa')
+    rvt_save.save_string_edits(cur, [(7, 'FillPattern.m_name', 'HorizontalZ')], cfg, dest=cp)
+    assert open(cur, 'rb').read() == open(SRC, 'rb').read() and open(cp, 'rb').read() != open(SRC, 'rb').read()
+    V.verify_declared(SRC, cp, 7, {'FillPattern.m_name': 'HorizontalZ'})
+    rvt_save.save_string_edits(cur, [(0, 'SymbolInfo.m_name', 'LinearQ'), (7, 'FillPattern.m_name', 'HorizontalZ')], cfg)
+    V.verify_declared(SRC, cur, 0, {'SymbolInfo.m_name': 'LinearQ'})
+    V.verify_declared(SRC, cur, 7, {'FillPattern.m_name': 'HorizontalZ'})

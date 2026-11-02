@@ -103,3 +103,17 @@ def test_junk_in_container_reserved_and_free_areas_is_refused(tmp_path):
     for k, f in cases.items():
         b = bytearray(good); f(b)
         with pytest.raises(sg.VerifyFailed, match='reserved/free area'): A.validate(bytes(b))
+
+
+def test_junk_after_the_gzip_member_of_a_declared_global_stream_is_refused(tmp_path):
+    """c4x-rvtgap: a flipped byte in the 134-byte post-member tail of Global/Latest (valid ECC), stream declared modified, was ACCEPTED."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); rvtw = pytest.importorskip('rvtw')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    raw = open(src, 'rb').read(); n = 'Global/Latest'
+    c = cfb.CFB(raw); st = rvtw.Stream(c.streams()[n].data); P = bytearray(st.payload); e = rvtw.read_member(bytes(P), P.find(rvtw.GZ))[1]
+    P[e + 1] ^= 0x41; c.streams()[n].data = st.build(bytes(P), keep_spare=False); o = str(tmp_path / 'j.rfa'); cfb.write(c, o)
+    A = adapters.RvtAdapter(); A.source_damage(raw)
+    with pytest.raises(sg.VerifyFailed, match='after the gzip member'): A.validate(open(o, 'rb').read())
+    ok = str(tmp_path / 'ok.rfa'); cfb.write(cfb.CFB(raw), ok); assert A.validate(open(ok, 'rb').read())

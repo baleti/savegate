@@ -247,7 +247,21 @@ class RvtAdapter:
         return v
 
     def source_damage(self, buf):
-        d = self._damage(buf); self._src_dmg = set(d); return d
+        d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf); return d
+
+    @staticmethod
+    def _global_tails(buf):
+        """c4x-rvtgap: {Global/<stream>: bytes after the first gzip member}; nobody decodes them, so junk there is invisible to every other check"""
+        out = {}
+        try:
+            import cfb, rvtw
+            for n, e in cfb.CFB(bytes(buf)).streams().items():
+                if not n.startswith('Global/') or e.data[:5] == b'<?xml': continue
+                P = rvtw.Stream(e.data).payload; i = P.find(rvtw.GZ)
+                if i < 0: continue
+                out[n] = bytes(P[rvtw.read_member(P, i)[1]:])
+        except Exception: return {}
+        return out
 
     def overwrite_risks(self, buf):
         """c5x-rvtgap: reasons NOT to replace this file in place although the bytes are fine. A workshared model (Worksharing: Central/Local in BasicFileInfo) is tied to its
@@ -442,6 +456,10 @@ class RvtAdapter:
             raise VerifyFailed('container length is not sector aligned')
         sl = self._container_slack(buf, c)      # c4x-rvtgap: bytes the container format reserves as zero/free must stay so (0 violations in 277 real files)
         if sl: raise VerifyFailed('container reserved/free area is not clean: %s' % '; '.join(sl[:3]))
+        sg_ = getattr(self, '_src_gtails', None)
+        if sg_:       # the tail after a Global stream's gzip member must be the source's own or pure zero padding (a rewrite that drops it is fine)
+            for n, t in self._global_tails(buf).items():
+                if n in sg_ and t != sg_[n] and t.rstrip(b'\0'): raise VerifyFailed('%s: bytes after the gzip member differ from the source and are not zero padding' % n)
         dmg = [d for d in self._damage(buf) if d not in getattr(self, '_src_dmg', ())]       # c5x-rvtgap: the written bytes get the same page ECC / gzip CRC+size check as the source (a modified stream is exempt from the hash diff); damage already present in the source (SAVE AS rescue copy) is not new
         if dmg: raise VerifyFailed('output fails the integrity check: %s' % '; '.join(dmg[:3]))
         try:

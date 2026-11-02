@@ -186,3 +186,16 @@ def test_save_refuses_to_run_under_python_O(tmp_path):
     assert 'CLOSED' in r.stdout and p.read_bytes() == b'O' * 100, r
     r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
     assert 'SAVED' in r.stdout, r
+
+
+def test_backups_of_a_file_whose_name_extends_another_are_not_mixed(tmp_path):
+    """c4x-rvtgap: list_backups matched by name prefix, so m.rvt.v2's backups were listed for m.rvt: prune deleted them and restore could write m.rvt.v2's bytes into m.rvt."""
+    import time
+    from savegate import backup
+    a = tmp_path / 'm.rvt'; b = tmp_path / 'm.rvt.v2'; a.write_bytes(b'AAAA'); b.write_bytes(b'BBBB')
+    backup.make_backup(str(a), keep=1); time.sleep(0.01); backup.make_backup(str(b)); time.sleep(0.01); backup.make_backup(str(b))
+    assert len(backup.list_backups(str(a))) == 1 and len(backup.list_backups(str(b))) == 2
+    time.sleep(0.01); backup.make_backup(str(a), keep=1)
+    assert len(backup.list_backups(str(a))) == 1 and len(backup.list_backups(str(b))) == 2
+    a.write_bytes(b'XXXX'); backup.restore(str(a))
+    assert a.read_bytes() == b'AAAA'

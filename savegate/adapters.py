@@ -484,6 +484,25 @@ class DwgAdapter:
 rvtw_META = {'Formats/Latest', 'BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData', 'ProjectInformation', 'PartAtom'}
 
 
+def _plain_damage(n, d):
+    """structure rules for the plain (non-ECC) streams; [] = looks fine"""
+    import struct
+    try:
+        if n == 'PartAtom':
+            from xml.dom import minidom; minidom.parseString(d)
+        elif n == 'RevitPreview4.0':
+            if d.find(b'\x89PNG') < 0 and d[:2] != b'BM': return ['%s: no PNG/BMP signature' % n]
+        elif n == 'BasicFileInfo':
+            if 'Build'.encode('utf-16le') not in d: return ['%s: no Build key' % n]
+        elif n == 'Contents':
+            if d[:4] != b'\x62\x19\x22\x05': return ['%s: bad magic' % n]
+        elif n == 'TransmissionData':
+            if len(d) < 4 or 4 + 2 * struct.unpack('<I', d[:4])[0] != len(d): return ['%s: length field does not match' % n]
+            from xml.dom import minidom; minidom.parseString(d[4:].decode('utf-16le').rstrip('\0').encode())
+    except Exception as ex: return ['%s: %s' % (n, type(ex).__name__)]
+    return []
+
+
 class RvtAdapter:
     name = 'rvt'
     def __init__(self, lib=None, elements_fn=None):
@@ -543,9 +562,11 @@ class RvtAdapter:
         except Exception as ex: return ['container unreadable: %s' % ex]
         for n, e in S.items():
             if len(e.data) != e.size: errs.append('%s: %d bytes readable of %d declared (FAT chain damaged/truncated)' % (n, len(e.data), e.size)); continue   # c4x-rvtgap
+            if n in ('PartAtom', 'RevitPreview4.0', 'BasicFileInfo', 'Contents', 'TransmissionData'):   # c7x-rvtread2: plain streams, structure rules (0 false positives on 22 public samples)
+                errs.extend(_plain_damage(n, e.data)); continue
             if n in rvtw.PLAIN or n.startswith('\x05'): continue      # OLE property-set streams are plain
             d = e.data
-            if d[:5] == b'<?xml' or d[:2] == b'\x1f\x8b': continue
+            if d[:5] == b'<?xml': continue      # c7x-rvtread2: raw-gzip-looking Formats/Latest IS page-ECC protected, do not skip it
             full = len(d) // rvtw.PAGE_STORED
             bad = [i for i in range(full) if not ecc.check(d[i * rvtw.PAGE_STORED:(i + 1) * rvtw.PAGE_STORED])]
             last = d[full * rvtw.PAGE_STORED:]

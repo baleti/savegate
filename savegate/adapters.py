@@ -704,6 +704,7 @@ class RvtAdapter:
         out = {'stream:' + k: _h(e.data) for k, e in c.streams().items()}
         out['meta:streams'] = repr(sorted(c.streams()))
         out['meta:sector'] = '%d' % c.major
+        out['meta:dirmeta'] = _h(repr([(e.name, e.type, bytes(e.clsid), e.state, e.color) for e in c.entries]).encode())      # c4x-rvtgap: directory-entry clsid/state/colour changes are not part of any edit (times are free)
         if self.elements_fn:
             try: els = self.elements_fn(buf)
             except Exception as ex: raise VerifyFailed('element view of the file could not be built (%s: %s)' % (type(ex).__name__, str(ex)[:120]))      # c4x-rvtgap: a file the reader cannot decode is not verifiable: refuse as VerifyFailed (not a DiskError)

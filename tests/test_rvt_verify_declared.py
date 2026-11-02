@@ -478,3 +478,23 @@ def test_output_container_relaid_as_cfb_v3_512_byte_sectors_is_judged_not_silent
     print('V3 VERDICT', verdict)
     assert verdict == 'REFUSED', 'a v3-sector container for a v4 source (never produced by Revit) must be refused'
     assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('field', ['clsid', 'state', 'ctime', 'mtime', 'color'])
+def test_directory_entry_metadata_changes_in_the_output_are_reported_not_hidden(tmp_path, field):
+    import savegate as sg
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    c = cfb.CFB(_edited_bytes(SRC, 7, 'HorizontalZ'))
+    off = {'clsid': 80, 'state': 96, 'ctime': 100, 'mtime': 108, 'color': 67}[field]
+    e = c.streams()['Global/Latest'] if field != 'clsid' else c.entries[0]
+    raw = bytearray(e.raw); raw[off] ^= 0x01; e.raw = bytes(raw)
+    out = str(tmp_path / 'm.rfa'); cfb.write(c, out)
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    try:
+        sg.save(doc, open(out, 'rb').read(), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}}); verdict = 'ACCEPTED'
+    except sg.SaveError as ex:
+        verdict = 'REFUSED ' + str(ex)[:100]
+    print('DIRMETA', field, verdict)
+    assert verdict.startswith('REFUSED') or field in ('ctime', 'mtime')
+    assert open(cur, 'rb').read() == before or verdict == 'ACCEPTED'

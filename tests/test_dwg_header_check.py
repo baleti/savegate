@@ -118,3 +118,20 @@ def test_preview_pointer_may_move_but_must_hit_the_preview_sentinel():
     assert _preamble_snap(a) == _preamble_snap(c)                                   # moved, still valid
     d = bytearray(c); d[0x300] ^= 1; assert _preamble_snap(bytes(d)) != _preamble_snap(a)     # points at garbage
     e = bytearray(c); e[0x0D:0x11] = (0x350).to_bytes(4, 'little'); assert _preamble_snap(bytes(e)) != _preamble_snap(a)
+
+
+def test_output_header_section_crc_must_be_valid_if_source_was(monkeypatch=None):
+    import savegate.adapters as AD
+    class O:
+        def __init__(s, raw): s.raw = raw; s.type = 19; s.data_bit = 0
+    class M:
+        def __init__(s, tag): s.tag = tag; s.objs = {1: O(b'\x01\x01\x00\x00\x00')}; s.blocks = {}; s.version = 'AC1032'
+    a = AD.DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
+    real = AD._header_section_crc_ok
+    try:
+        for src, out, flagged in ((True, False, True), (True, True, False), (False, False, False), (False, True, False)):
+            AD._header_section_crc_ok = lambda m, src=src, out=out: src if m.tag == 's' else out
+            a._pair = (M('s'), M('o'))
+            assert (('header_section_crc', 'hdr') in a.extra_checks({})) == flagged, (src, out)
+    finally:
+        AD._header_section_crc_ok = real

@@ -112,6 +112,19 @@ _DWG_NAMES = {'AC1006': 'R10', 'AC1009': 'R11/R12', 'AC1012': 'R13', 'AC1014': '
 _SUBENT = {2, 6, 10, 11, 12, 13, 14, 15}   # ATTRIB, SEQEND, VERTEX kinds
 
 
+def _header_section_crc_ok(m):
+    """AcDb:Header section CRC16 of an R2004-family model (position 20 + size + 4; 20 + size for AC1018). None when not applicable.
+    c4x-dwgreadfuzz item 108: a writer using 'length - 18' put the new CRC in the wrong place for 41/239 real files."""
+    try:
+        import dwgfmt as F
+        if m.version not in ('AC1018', 'AC1024', 'AC1027', 'AC1032'): return None
+        h = F.r2004_section_data(m._buf, m._info, 'AcDb:Header')
+        sz = int.from_bytes(h[16:20], 'little'); p = 20 + sz + (0 if m.version == 'AC1018' else 4)
+        return F.crc16(bytes(h[16:p]), 0xC0C1) == int.from_bytes(h[p:p + 2], 'little')
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -277,6 +290,8 @@ class DwgAdapter:
                 if self._handle_damage_one(h, o): bad.append(('embedded_handle', 'obj:%x' % h))
         except ImportError:
             pass
+        okm = _header_section_crc_ok(mo)
+        if okm is False and _header_section_crc_ok(ms) is not False: bad.append(('header_section_crc', 'hdr'))
         # c4x-dwgreadfuzz item 87: the element view compares ENTITIES by decoded fields only, so a CRC-consistent bit flip in a bit the decoder discards (e.g. the
         # three visual-style flag bits of common_entity) is invisible to it (5/295 CRC-fixed LINE flips accepted by every check). An object that is not declared
         # (modified/added/side effect) must therefore be byte-identical to the source.

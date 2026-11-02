@@ -607,3 +607,16 @@ def test_ten_chained_edits_then_revert_leave_no_drift_in_any_other_element(tmp_p
     diff = sorted(k for k in set(sa) | set(sb) if sa.get(k) != sb.get(k))
     print('DRIFT keys differing after 10 generations + revert:', diff[:12], len(diff))
     assert not [k for k in diff if k.startswith('el:')], diff[:12]      # no element drifted; the partition stream bytes themselves differ (re-encoded members, record padding) and are expected to
+
+
+@pytest.mark.parametrize('n,ok', [(4097, True), (16384, False)])
+def test_long_string_growth_is_accepted_or_refused_cleanly_with_original_intact(tmp_path, n, ok):
+    import savegate as sg
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    val = 'x' * n; b = _edited_bytes(SRC, 7, val)
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    man = {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': val}}}
+    if ok: sg.save(doc, b, man)
+    else:
+        with pytest.raises(sg.SaveError): sg.save(doc, b, man)
+        assert open(cur, 'rb').read() == before

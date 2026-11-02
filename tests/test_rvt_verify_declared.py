@@ -681,3 +681,17 @@ def test_source_with_container_loop_is_refused_fast_and_never_changed(tmp_path, 
     print('SRCLOOP', mode, verdict)
     assert verdict.startswith('REFUSED')
     assert cur.read_bytes() == bytes(buf)
+
+
+@pytest.mark.skipif(not os.path.exists('/proc/self/statm'), reason='linux rss probe')
+def test_repeated_element_snapshots_do_not_leak_a_context_per_call():
+    import gc
+    from savegate import rvt_elements as E
+    buf = open(SRC, 'rb').read()
+    rss = lambda: int(open('/proc/self/statm').read().split()[1]) * 4096 // 2 ** 20
+    E.elements(buf); gc.collect(); base = rss()
+    for _ in range(5): E.elements(buf)
+    gc.collect()
+    grown = rss() - base
+    print('LEAK MB over 5 calls', grown)
+    assert grown < 30, 'was about 90 MB (18 MB per call) before the per-path cache purge'

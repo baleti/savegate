@@ -94,6 +94,14 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
         return out
     finally:
         os.remove(p)
+        # c4x-rvtgap: the reader modules cache their per-file context in module dicts keyed by this one-shot temp path (rvt_geometry._ctx held ~18 MB per call for a
+        # 3 MB file and was never reused: every save in a long-running app leaked it). Drop every entry for this path.
+        for mn in ('rvt_geometry', 'rvt_xcache', 'rvt_params', 'rvt_scan', 'rvt_decode'):
+            mod = sys.modules.get(mn)
+            for v in list(vars(mod).values()) if mod else ():
+                if isinstance(v, dict):
+                    try: v.pop(p, None)
+                    except Exception: pass
 
 
 def id_state(buf, reader_dir=None, lib=None):

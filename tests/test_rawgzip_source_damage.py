@@ -199,3 +199,10 @@ def test_backups_of_a_file_whose_name_extends_another_are_not_mixed(tmp_path):
     assert len(backup.list_backups(str(a))) == 1 and len(backup.list_backups(str(b))) == 2
     a.write_bytes(b'XXXX'); backup.restore(str(a))
     assert a.read_bytes() == b'AAAA'
+
+
+def test_lock_is_shared_by_names_that_differ_only_in_case(tmp_path):
+    """c4x-rvtgap: on Windows/macOS 'Model.rvt' and 'model.RVT' are the same file; separate lock names would let two savers run at once."""
+    from savegate import guard
+    assert guard._lock_path(str(tmp_path / 'Model.rvt')) == guard._lock_path(str(tmp_path / 'model.RVT'))
+    assert guard._lock_path(str(tmp_path / 'a.rvt')) != guard._lock_path(str(tmp_path / 'a.rvt.x'))

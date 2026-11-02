@@ -27,7 +27,7 @@ def check_unchanged(path, fp, rehash=True):
 
 def _lock_path(path):
     d, n = os.path.split(os.path.abspath(path))
-    return os.path.join(d, '.' + n + '.savegate-lock')
+    return os.path.join(d, '.' + n.lower() + '.savegate-lock')      # c4x-rvtgap: on case-insensitive filesystems (Windows, macOS) 'Model.rvt' and 'model.RVT' are one file and must share one lock
 
 
 def _pid_alive(pid):

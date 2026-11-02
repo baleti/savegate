@@ -592,3 +592,18 @@ def test_2026_edit_at_first_and_last_decodable_record_is_accepted_and_flips_outs
         verdict = 'REFUSED ' + str(ex)[:140]
     print('B26', which, 'flips refused', refused, 'edit', verdict)
     assert verdict == 'ACCEPTED' or open(cur, 'rb').read() == before
+
+
+@pytest.mark.skipif(not os.path.exists(S26), reason='2026 family absent')
+def test_ten_chained_edits_then_revert_leave_no_drift_in_any_other_element(tmp_path):
+    import savegate as sg
+    from savegate import rvt_save
+    from savegate.adapters import RvtAdapter
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(S26, cur); cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    seq = [[(7, 'FillPattern.m_name', 'G%d' % k * (1 + k))] if k % 2 else [(0, 'SymbolInfo.m_name', 'S%d' % k * (1 + k))] for k in range(1, 9)]
+    seq += [[(7, 'FillPattern.m_name', 'Horizontal')], [(0, 'SymbolInfo.m_name', 'Linear')]]
+    for e in seq: rvt_save.save_string_edits(cur, e, cfg)
+    A = RvtAdapter(); sa = A.snapshot(open(S26, 'rb').read()); sb = A.snapshot(open(cur, 'rb').read())
+    diff = sorted(k for k in set(sa) | set(sb) if sa.get(k) != sb.get(k))
+    print('DRIFT keys differing after 10 generations + revert:', diff[:12], len(diff))
+    assert not [k for k in diff if k.startswith('el:')], diff[:12]      # no element drifted; the partition stream bytes themselves differ (re-encoded members, record padding) and are expected to

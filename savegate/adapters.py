@@ -180,6 +180,25 @@ def _preview_changed(ms, mo):
         return None
 
 
+def _page_padding_nonzero(m):
+    """Numbers of data pages of an R2004-family model whose bytes behind the compressed payload (inside the page) are not all zero. Our writer zero-fills them
+    (c4x-dwgreadfuzz item 129: 0 of 2020 output pages non-zero, while 1783 of 2025 SOURCE pages carry non-zero padding from the producing application), so in an OUTPUT
+    non-zero padding means a flipped or foreign byte that no decoder looks at (items 122/124: the only bit flips the gate accepted, 5 of 900). None if n/a."""
+    try:
+        import struct
+        if m.version not in ('AC1018', 'AC1024', 'AC1027', 'AC1032'): return None
+        b = m._buf; out = []
+        for n, (a, sz) in m._info['pages'].items():
+            if a + 32 > len(b): continue
+            mask = 0x4164536B ^ a; f = [x ^ mask for x in struct.unpack_from('<8I', b, a)]
+            if f[0] != 0x4163043B: continue
+            end = a + 32 + f[2]
+            if end <= a + sz and any(b[end:a + sz]): out.append(n)
+        return out
+    except Exception:
+        return None
+
+
 class _SkipRule(Exception): pass
 
 
@@ -346,6 +365,7 @@ class DwgAdapter:
         except ImportError:
             pass
         for nm_ in (_other_sections_changed(ms, mo) or [])[:5]: bad.append(('section_changed', nm_))
+        for n_ in (_page_padding_nonzero(mo) or [])[:5]: bad.append(('page_padding', 'page:%d' % n_))
         pv_ = _preview_changed(ms, mo)
         if pv_: bad.append(('preview_changed', 'pv:%d' % pv_[0]))
         hd_ = _header_section_diff(ms, mo)

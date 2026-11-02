@@ -224,3 +224,18 @@ def test_r2000_neighbour_may_gain_explicit_links_but_not_lose_them():
     assert run({1: 1, 2: 1}, {1: 0, 2: 1}, {'modified': [2]}) != []                                 # nothing added/deleted: not a side effect
     assert run({1: 0, 2: 1}, {1: 1, 2: 1}, {'deleted': [3]}) != []                                  # links lost (0 -> 1): refused
     assert run({i: 1 for i in range(10)}, {i: 0 for i in range(10)}, {'deleted': [99]}) != []       # far more neighbours than one edit can touch
+
+
+def test_output_page_padding_behind_the_payload_must_be_zero():
+    import struct, savegate.adapters as AD
+    def page(a, comp, size, pad):
+        mask = 0x4164536B ^ a
+        hdr = struct.pack('<8I', *[x ^ mask for x in (0x4163043B, 100, comp, 0, 0, 0, 0, 0)])
+        return hdr + bytes(range(1, comp + 1)) + pad
+    a = 64; pg = page(a, 10, 80, bytes(80 - 32 - 10))
+    class M: pass
+    m = M(); m.version = 'AC1032'; m._buf = bytes(a) + pg; m._info = {'pages': {1: (a, 80)}}
+    assert AD._page_padding_nonzero(m) == []
+    bad = bytearray(m._buf); bad[a + 32 + 10 + 3] = 1; m._buf = bytes(bad)
+    assert AD._page_padding_nonzero(m) == [1]
+    m._buf = bytes(m._buf[:a + 32 + 10 + 3]) + b'\0' * 100; m.version = 'AC1015'; assert AD._page_padding_nonzero(m) is None

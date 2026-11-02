@@ -93,6 +93,24 @@ def _r2000_section_problems(buf):
     return out
 
 
+def _dangling_after_delete(ms, mo, limit=20):
+    """c4x-dwgreadfuzz 225: handles that existed in the source object map, are gone from the output, and are still NAMED by a surviving object. A surviving object that names
+    them is byte-identical to the source (undeclared-object rule) so no other check sees the dangling pointer. Pre-existing dangling pointers never count (only handles
+    that disappeared). [(referrer handle, deleted handle)]"""
+    gone = set(ms.objs) - set(mo.objs)
+    if not gone: return []
+    import dwgmodel
+    out = []
+    for h, o in mo.objs.items():
+        try: hs = dwgmodel.resolve_handles(o)
+        except Exception: continue
+        for c, v in hs:
+            if v in gone:
+                out.append((h, v)); break
+        if len(out) >= limit: break
+    return out
+
+
 def _header_problems(buf):
     """R2004/R2010/R2013/R2018 (AC1018, AC1024, AC1027, AC1032) file header: the encrypted 0x6C-byte block at 0x80 carries the magic 'AcFssFcAJMB' and a CRC32 (plain zlib crc32 over the
     decrypted block with the CRC field zeroed). The reader ignores both, AutoCAD does not (c4x-dwgreadfuzz item 75: 24/25 single-bit header flips were accepted before this check)."""
@@ -476,6 +494,7 @@ class DwgAdapter:
                 und.append(h)
             # R2000 links entities in a chain: adding/deleting one rewrites the bytes of its (at most two) neighbours, whose decoded fields do not change. Allow that many
             # undeclared changed objects per declared add/delete there, nothing else (item 151); other versions: none.
+            for rh_, dh_ in _dangling_after_delete(ms, mo): bad.append(('dangling_after_delete', 'obj:%x names deleted obj:%x' % (rh_, dh_)))
             quota = 2 * (len(manifest.get('added', ())) + len(manifest.get('deleted', ()))) if r2000 else 0
             if len(und) > quota:
                 for h in und[:5]: bad.append(('undeclared_object_bytes', 'obj:%x' % h))

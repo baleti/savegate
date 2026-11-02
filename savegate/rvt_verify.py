@@ -3,26 +3,47 @@ verify_declared() decodes that element from the source and from the output and d
 import os, sys
 
 
-def _fields(path, eid, lib):
+class _LightModel:
+    """wlrec.Model that inflates only the named Partitions/* streams (a big project holds many; the declared element lives in a declared one)"""
+    def __new__(cls, path, only=None):
+        import wlrec
+        if not only: return wlrec.Model(path)
+        import cfb, rvtw
+        full = wlrec.Model.__new__(wlrec.Model)
+        S, D, I, ES = wlrec.S, wlrec.D, wlrec.I, wlrec.ES
+        full.path = path; full.o, full.cls, full.ids = S.load(path); full.IDW = S.id_size(full.cls); full.IDF = '<I' if full.IDW == 4 else '<Q'
+        full.sch = D.Schema(full.cls); full.dec = D.Dec(full.sch, idsize=full.IDW); full.etags = I.element_tags(full.cls)
+        try: full.dec.es_schemas = ES.load(path)[0]
+        except Exception: full.dec.es_schemas = {}
+        full.c = cfb.CFB(open(path, 'rb').read()); full.parts = {}
+        for sn, e in full.c.streams().items():
+            if sn.startswith('Partitions/') and sn in only:
+                st = rvtw.Stream(e.data); P = st.payload; st0 = P.find(rvtw.GZ); mem = rvtw.members(P, st0)
+                raws = [rvtw.read_member(P, pos)[0] for pos, end, _ in mem]
+                full.parts[sn] = dict(stream=st, mem=mem, raws=raws, joined=b''.join(raws), offs=wlrec.np.cumsum([0] + [len(r) for r in raws]))
+        full.idarr = wlrec.np.array(sorted(full.ids), dtype=wlrec.np.uint32 if full.IDW == 4 else wlrec.np.uint64)
+        return full
+
+
+def _fields(path, eid, lib, only=None):
     for p in (lib, os.path.dirname(lib)):
         if p not in sys.path: sys.path.insert(0, p)
-    import wlrec
-    m = wlrec.Model(path)
+    m = _LightModel(path, only)
     recs = list(m.find(eid))
     if not recs: raise ValueError('element %s has no decodable record in %s' % (eid, path))      # the editor edits the first one (which=0), so does this
     return [(x[0], x[1], x[4]) for x in recs[0][3]]
 
 
-def field_diff(src_path, out_path, eid, lib=None):
+def field_diff(src_path, out_path, eid, lib=None, only=None):
     lib = lib or os.environ.get('SAVEGATE_RVT_LIB') or os.path.expanduser('~/rvt-research/write-lab')
-    a = _fields(src_path, eid, lib); b = _fields(out_path, eid, lib)
+    a = _fields(src_path, eid, lib, only); b = _fields(out_path, eid, lib, only)
     if len(a) != len(b): return None, a, b      # structure changed
     return [(x[1], x[2], y[2]) for x, y in zip(a, b) if x != y], a, b
 
 
-def verify_declared(src_path, out_path, eid, expected, lib=None):
+def verify_declared(src_path, out_path, eid, expected, lib=None, only=None):
     """expected: {field name: new value (as the decoder logs it, usually str)}. Raises ValueError unless the changed fields are exactly these, with these values."""
-    d, a, b = field_diff(src_path, out_path, eid, lib)
+    d, a, b = field_diff(src_path, out_path, eid, lib, only)
     if d is None: raise ValueError('el:%s: field structure differs (%d fields in the source, %d in the output)' % (eid, len(a), len(b)))
     got = {}
     for n, old, new in d:

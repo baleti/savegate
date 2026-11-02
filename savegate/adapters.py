@@ -510,12 +510,13 @@ class RvtAdapter:
             a = os.path.join(d, 'a.rvt'); b = os.path.join(d, 'b.rvt')
             open(a, 'wb').write(bh[0]); open(b, 'wb').write(bh[1])
             added = {str(x).split(':')[-1] for x in manifest.get('added', ())}
+            only = {str(k)[7:] for k in manifest.get('modified', ()) if str(k).startswith('stream:Partitions/')} or None      # c4x-rvtgap: inflate only the declared partitions
             for eid, fields in ex.items():
                 try:
                     i = int(str(eid).split(':')[-1])
                     if str(i) in added:      # fields may carry {'__clone_of__': <id>}
                         f = dict(fields); co = f.pop('__clone_of__', None); rvt_verify.verify_new(a, b, i, co, f)
-                    else: rvt_verify.verify_declared(a, b, i, fields)
+                    else: rvt_verify.verify_declared(a, b, i, fields, only=only)
                 except Exception as e: bad.append(('declared_element_mismatch', '%s: %s' % (type(e).__name__, str(e)[:200])))
         return bad
 

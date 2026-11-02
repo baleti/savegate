@@ -83,3 +83,10 @@ def test_gate_two_element_edit_with_expect(tmp_path):
         return sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), b, {'modified': ['stream:Partitions/67', 'el:0', 'el:7'], 'expect': ex})
     run({0: {'SymbolInfo.m_name': 'LinearXY'}, 7: {'FillPattern.m_name': 'HorizontalX'}})
     with pytest.raises(sg.VerifyFailed): run({0: {'SymbolInfo.m_name': 'LinearXY'}, 7: {'FillPattern.m_name': 'Horizontal2'}})
+
+
+def test_light_model_gives_the_same_fields_as_the_full_model():
+    a = V.field_diff(SRC, GEN1, 0)[0]
+    b = V.field_diff(SRC, GEN1, 0, only={'Partitions/67'})[0]
+    assert a == b and a
+    with pytest.raises(ValueError): V.field_diff(SRC, GEN1, 0, only={'Partitions/1'})      # element not in a loaded partition: not silently accepted

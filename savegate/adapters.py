@@ -76,6 +76,23 @@ def _preamble_snap(buf):
     return None
 
 
+def _r2000_section_problems(buf):
+    """AC1015 header-variable and class sections: CRC16 and complement end sentinel (c4x-dwgreadfuzz 191: 24/24 flips inside the class section were invisible to source_damage;
+    the writer copies the section unchanged, so the damage would be saved as if it were good)."""
+    if bytes(buf[:6]) != b'AC1015': return []
+    import dwgfmt as F
+    out = []
+    try:
+        loc = F.read_r13_r2000(buf)['locators']
+        for i, name in ((0, 'header variables'), (1, 'classes')):
+            _, crc_ok, sent_ok = F.section_r13_r2000(buf, loc[i])
+            if not crc_ok: out.append('AC1015 %s section: CRC mismatch' % name)
+            if not sent_ok: out.append('AC1015 %s section: end sentinel mismatch' % name)
+    except Exception as e:
+        out.append('AC1015 sections unreadable: %s' % str(e)[:80])
+    return out
+
+
 def _header_problems(buf):
     """R2004/R2010/R2013/R2018 (AC1018, AC1024, AC1027, AC1032) file header: the encrypted 0x6C-byte block at 0x80 carries the magic 'AcFssFcAJMB' and a CRC32 (plain zlib crc32 over the
     decrypted block with the CRC field zeroed). The reader ignores both, AutoCAD does not (c4x-dwgreadfuzz item 75: 24/25 single-bit header flips were accepted before this check)."""
@@ -395,7 +412,7 @@ class DwgAdapter:
         try:
             import dwgmodel
             m = dwgmodel.Model(buf)
-            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200] + self._handle_damage(m)[:200]
+            return (['object map: CRC mismatch'] if getattr(m, 'omap_ok', None) is False else []) + _header_problems(buf) + _r2000_section_problems(buf) + _system_page_problems(buf, getattr(m, '_info', None)) + _page_problems(buf, getattr(m, '_info', None))[:50] + self._crc_damage(m)[:200] + self._handle_damage(m)[:200]
         except Exception as e:
             return ['source not readable: %s' % str(e)[:100]]
 

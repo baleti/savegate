@@ -219,3 +219,14 @@ def test_damaged_formats_latest_in_the_source_refuses_in_place_save_and_warns_on
     res = sg.save_as(doc, before, dest, {})
     assert open(dest, 'rb').read() == before      # an unchanged rescue copy is allowed ...
     assert any('damaged' in w for w in res.report.get('warnings', [])), res.report      # ... but is flagged as carrying the damage
+
+
+def test_save_as_with_edit_of_a_damaged_source_is_refused_unless_allowed(tmp_path):
+    import savegate as sg, olefile
+    cur = str(tmp_path / 'f.rfa'); shutil.copy(SRC, cur)
+    o = olefile.OleFileIO(cur, write_mode=True); d = bytearray(o.openstream('Formats/Latest').read()); d[len(d) // 2] ^= 0x10; o.write_stream('Formats/Latest', bytes(d)); o.close()
+    before = open(cur, 'rb').read(); edited = bytearray(before); edited[-1] ^= 1
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)); dest = str(tmp_path / 'e.rfa')
+    with pytest.raises(sg.SaveError):
+        sg.save_as(doc, bytes(edited), dest, {})
+    assert not os.path.exists(dest) and open(cur, 'rb').read() == before

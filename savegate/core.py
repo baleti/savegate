@@ -20,6 +20,7 @@ class Config:
     journal_dir: str = None
     verify: bool = True
     allow_hardlink_break: bool = False  # c4x-rvtgap: allow overwriting a file that has other hard links (the other names keep the old content)
+    allow_damaged_edit: bool = False  # c4x-rvtgap 106: allow Save As of an EDITED copy of a source that is already damaged (unchanged rescue copies are always allowed)
     allow_readonly: bool = False      # overwrite a read-only target (the flag/mode is kept)
 
 
@@ -155,6 +156,8 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
         return _save(doc, new_bytes, manifest, False, verify)
     if doc.journal: doc.journal.log('save_as_begin', dest=dest, size=len(new_bytes))
     dm = doc.adapter.source_damage(doc.buf) if hasattr(doc.adapter, 'source_damage') else []      # c4x-rvtgap: BEFORE the verify, so damage already in the source is known and not counted as new damage of the copy
+    if dm and not doc.cfg.allow_damaged_edit and bytes(new_bytes) != bytes(doc.buf):
+        raise VerifyFailed('the SOURCE file is damaged (%d problem(s), first: %s); an edited copy would carry the damage. Nothing was written. Save an unchanged rescue copy, or set allow_damaged_edit.' % (len(dm), dm[0]), dict(source_damage=dm[:20]))
     tmp, rep = _produce(doc, new_bytes, manifest, dest, verify)
     if hasattr(doc.adapter, 'source_damage'):
         if dm: rep.setdefault('warnings', []).append('the SOURCE file is damaged (%d problem(s), first: %s); the copy carries the same damage and is not confirmed to open in the application' % (len(dm), dm[0]))

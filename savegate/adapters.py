@@ -415,6 +415,23 @@ class RvtAdapter:
         if not self.elements_fn or not any(manifest.get(k) for k in ('modified', 'added', 'deleted')): return set()
         return {k for k in getattr(self, '_keys', ()) if k.startswith('stream:Partitions/')}      # c5x-rvtgap: Global/* is NOT excused (the writer leaves every Global stream byte-identical on an element edit; a tampered one with valid ECC/CRC was accepted)
 
+    @staticmethod
+    def _container_slack(buf, c):
+        import struct
+        errs = []; ss = c.ss
+        if any(buf[34:40]): errs.append('header reserved bytes are not zero')
+        if struct.unpack_from('<I', buf, 52)[0]: errs.append('header transaction signature is not zero')
+        d = c._chain(struct.unpack_from('<I', buf, 48)[0])
+        for i in range(len(d) // 128):
+            e = d[i * 128:(i + 1) * 128]
+            if e[66] == 0 and any(e[:64]): errs.append('free directory entry %d carries a name' % i); break
+        nfat = struct.unpack_from('<I', buf, 44)[0]; fat = []
+        for x in [x for x in struct.unpack_from('<109I', buf, 76) if x < 0xFFFFFFFA][:nfat]:
+            fat += struct.unpack_from('<%dI' % (ss // 4), buf, (x + 1) * ss)
+        ns = len(buf) // ss - 1
+        if any(x != 0xFFFFFFFF for x in fat[ns:]): errs.append('FAT entries beyond the end of the file are not free')
+        return errs
+
     def validate(self, buf):
         import cfb
         c = cfb.CFB(buf)
@@ -423,6 +440,8 @@ class RvtAdapter:
             if need not in s: raise VerifyFailed('stream %s missing in output' % need)
         if len(buf) != (c.nsectors + 1) * c.ss + (512 - c.ss if c.major == 3 else 0) and len(buf) % c.ss:
             raise VerifyFailed('container length is not sector aligned')
+        sl = self._container_slack(buf, c)      # c4x-rvtgap: bytes the container format reserves as zero/free must stay so (0 violations in 277 real files)
+        if sl: raise VerifyFailed('container reserved/free area is not clean: %s' % '; '.join(sl[:3]))
         dmg = [d for d in self._damage(buf) if d not in getattr(self, '_src_dmg', ())]       # c5x-rvtgap: the written bytes get the same page ECC / gzip CRC+size check as the source (a modified stream is exempt from the hash diff); damage already present in the source (SAVE AS rescue copy) is not new
         if dmg: raise VerifyFailed('output fails the integrity check: %s' % '; '.join(dmg[:3]))
         try:

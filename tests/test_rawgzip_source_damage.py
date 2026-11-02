@@ -84,3 +84,22 @@ def test_junk_in_the_zero_padding_of_a_padded_partition_is_refused_without_the_e
     c = cfb.CFB(good); st = rvtw.Stream(c.streams()[pn].data); P = bytearray(st.payload); assert P[-1000:] == bytes(1000)
     P[len(P) - 30000] = 0x5a; c.streams()[pn].data = st.build(bytes(P), keep_spare=False); b2 = str(tmp_path / 'j.rfa'); cfb.write(c, b2)
     with pytest.raises(sg.VerifyFailed, match='partition tail'): A.validate(open(b2, 'rb').read())
+
+
+def test_junk_in_container_reserved_and_free_areas_is_refused(tmp_path):
+    """c4x-rvtgap: header reserved bytes / transaction signature / name bytes in a free directory entry / non-free FAT entries past the end were all ACCEPTED (gate on and off)."""
+    import struct
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    good = open(src, 'rb').read(); c = cfb.CFB(good); out = str(tmp_path / 'w.rfa'); cfb.write(c, out); good = open(out, 'rb').read()
+    A = adapters.RvtAdapter(); assert A.validate(good)
+    ss = 1 << struct.unpack_from('<H', good, 30)[0]; off = (struct.unpack_from('<I', good, 48)[0] + 1) * ss
+    free = next(i for i in range(ss // 128) if good[off + i * 128 + 66] == 0 and not any(good[off + i * 128:off + i * 128 + 64]))
+    fo = (struct.unpack_from('<I', good, 76)[0] + 1) * ss
+    cases = {'hdr_reserved': lambda b: b.__setitem__(slice(34, 40), b'\x99' * 6), 'transsig': lambda b: b.__setitem__(slice(52, 56), b'\1\2\3\4'),
+             'free_dir_name': lambda b: b.__setitem__(slice(off + free * 128, off + free * 128 + 4), b'J\0K\0'), 'fat_tail': lambda b: struct.pack_into('<I', b, fo + ss - 4, 7)}
+    for k, f in cases.items():
+        b = bytearray(good); f(b)
+        with pytest.raises(sg.VerifyFailed, match='reserved/free area'): A.validate(bytes(b))

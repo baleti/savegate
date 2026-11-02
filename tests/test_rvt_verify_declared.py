@@ -391,3 +391,16 @@ def test_element_delete_through_the_gate_declared_is_judged_undeclared_is_refuse
     assert V.field_diff(SRC, cur, 0)[0] == []      # a neighbouring element is untouched
     with pytest.raises(ValueError):      # and el:7 is really gone
         V.field_diff(SRC, cur, 7)
+
+
+@pytest.mark.parametrize('stream', ['Global/PartitionTable', 'Global/ElemTable', 'Global/Latest', 'Global/History', 'Global/DocumentIncrementTable', 'Global/ContentDocuments', 'BasicFileInfo', 'Contents', 'PartAtom', 'TransmissionData', 'RevitPreview4.0', 'Formats/Latest'])
+def test_one_flipped_byte_in_any_other_stream_of_an_otherwise_valid_output_is_refused(tmp_path, stream):
+    import savegate as sg, olefile
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    good = tmp_path / 'good.rfa'; good.write_bytes(_edited_bytes(SRC, 7, 'HorizontalZ'))
+    o = olefile.OleFileIO(str(good), write_mode=True); d = bytearray(o.openstream(stream).read()); d[len(d) // 2] ^= 0x01; o.write_stream(stream, bytes(d)); o.close()
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    for mod in (['stream:Partitions/67', 'el:7'], ['stream:Partitions/67', 'el:7', 'stream:' + stream]):
+        with pytest.raises(sg.SaveError):
+            sg.save(doc, good.read_bytes(), {'modified': mod, 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+        assert open(cur, 'rb').read() == before and sorted(os.listdir(tmp_path)) == ['c.rfa', 'good.rfa']

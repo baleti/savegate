@@ -704,7 +704,7 @@ class RvtAdapter:
         out = {'stream:' + k: _h(e.data) for k, e in c.streams().items()}
         out['meta:streams'] = repr(sorted(c.streams()))
         out['meta:sector'] = '%d' % c.major
-        out['meta:hdr'] = _h(bytes(buf[24:44]) + bytes(buf[56:60]))      # c4x-rvtgap: version, byte order, shifts, reserved, directory-sector count, mini cutoff: not part of any edit (the writer reproduces them)
+        out['meta:hdr'] = _h(bytes(buf[8:24]) + bytes(buf[24:44]) + bytes(buf[56:60]) + bytes(buf[64:72]))      # c4x-rvtgap: version, byte order, shifts, reserved, directory-sector count, mini cutoff: not part of any edit (the writer reproduces them)
         out['meta:dirmeta'] = _h(repr([(e.name, e.type, bytes(e.clsid), e.state, e.color) for e in c.entries]).encode())      # c4x-rvtgap: directory-entry clsid/state/colour changes are not part of any edit (times are free)
         if self.elements_fn:
             try: els = self.elements_fn(buf)

@@ -696,3 +696,14 @@ def test_repeated_element_snapshots_do_not_leak_a_context_per_call():
     grown = rss() - base
     print('LEAK MB over 6 calls after warm-up', grown)
     assert grown < 15, 'was about 108 MB (18 MB per call) before the per-path cache purge'
+
+
+@pytest.mark.parametrize('off', [8, 15, 23, 65, 66, 67, 68, 39, 40])
+def test_single_bit_flip_in_header_bytes_that_no_edit_touches_is_refused(tmp_path, off):
+    import savegate as sg
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    b = bytearray(_edited_bytes(SRC, 7, 'HorizontalZ')); b[off] ^= 1
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError):
+        sg.save(doc, bytes(b), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+    assert open(cur, 'rb').read() == before

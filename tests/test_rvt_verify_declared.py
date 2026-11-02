@@ -457,3 +457,24 @@ def test_two_streams_with_swapped_contents_in_an_otherwise_valid_output_are_refu
         with pytest.raises(sg.SaveError):
             sg.save(doc, open(out, 'rb').read(), {'modified': mod, 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
         assert open(cur, 'rb').read() == before
+
+
+def test_output_container_relaid_as_cfb_v3_512_byte_sectors_is_judged_not_silently_accepted_or_corrupt(tmp_path):
+    """Probe: the source is CFB v4 (4096 sectors). An output with the same streams in a v3 container
+    is a different file format layout; the gate must at least not crash and must keep the original intact."""
+    import savegate as sg, struct
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    c = cfb.CFB(_edited_bytes(SRC, 7, 'HorizontalZ'))
+    c.ss = 512; c.header[26:28] = struct.pack('<H', 3); c.header[30:32] = struct.pack('<H', 9)
+    out = str(tmp_path / 'v3.rfa'); cfb.write(c, out)
+    assert open(out, 'rb').read()[26] == 3
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    try:
+        r = sg.save(doc, open(out, 'rb').read(), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+        verdict = 'ACCEPTED'
+    except sg.SaveError as e:
+        verdict = 'REFUSED'; print('REASON', str(e)[:200])
+    print('V3 VERDICT', verdict)
+    assert verdict == 'REFUSED', 'a v3-sector container for a v4 source (never produced by Revit) must be refused'
+    assert open(cur, 'rb').read() == before

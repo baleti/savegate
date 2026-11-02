@@ -32,3 +32,21 @@ def test_fat_chain_cut_makes_streams_short_and_is_reported(tmp_path):
     for i in (4, 23, 35):
         b = bytearray(src); struct.pack_into('<I', b, off + 4 * i, 0xFFFFFFFE)
         assert any('declared' in e for e in A.source_damage(bytes(b))), i
+
+
+@pytest.mark.parametrize('y', ['2024', '2026'])
+def test_writer_copies_every_stream_but_the_edited_partition(y, tmp_path):
+    """c4x-rvtgap inventory: a no-edit container write leaves all streams byte-identical; a one-string edit changes exactly one Partitions/* stream."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
+    src = S + 'racbasicsamplefamily-%s.rfa' % y
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    St = cfb.CFB(open(src, 'rb').read()).streams()
+    o = str(tmp_path / 'n.rfa'); cfb.write(cfb.CFB(open(src, 'rb').read()), o)
+    N = cfb.CFB(open(o, 'rb').read()).streams()
+    assert set(N) == set(St) and [n for n in St if N[n].data != St[n].data] == []
+    ed = wledit.Editor(src); l = next(l for l in ed.trace(0)[3] if isinstance(l[4], str) and 0 < len(l[4]) < 200 and l[3] - l[2] == 4 + 2 * len(l[4]) and l[4] != 'None')
+    ed.set_string(0, l[1], l[4] + 'XY', match=l[4]); o2 = str(tmp_path / 'e.rfa'); ed.save(o2)
+    E = cfb.CFB(open(o2, 'rb').read()).streams()
+    d = [n for n in St if E[n].data != St[n].data]
+    assert set(E) == set(St) and len(d) == 1 and d[0].startswith('Partitions/')

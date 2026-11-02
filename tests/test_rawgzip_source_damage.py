@@ -117,3 +117,18 @@ def test_junk_after_the_gzip_member_of_a_declared_global_stream_is_refused(tmp_p
     A = adapters.RvtAdapter(); A.source_damage(raw)
     with pytest.raises(sg.VerifyFailed, match='after the gzip member'): A.validate(open(o, 'rb').read())
     ok = str(tmp_path / 'ok.rfa'); cfb.write(cfb.CFB(raw), ok); assert A.validate(open(ok, 'rb').read())
+
+
+@pytest.mark.parametrize('st', ['BasicFileInfo', 'RevitPreview4.0', 'Contents', 'TransmissionData'])
+def test_declared_metadata_stream_change_is_refused(st, tmp_path):
+    """c4x-rvtgap: a flipped byte in a plain metadata stream, declared modified, was ACCEPTED (no ECC/CRC to catch it)."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
+    cfb = pytest.importorskip('cfb')
+    src = S + 'racbasicsamplefamily-2024.rfa'
+    if not os.path.exists(src): pytest.skip('public sample missing')
+    raw = open(src, 'rb').read(); c = cfb.CFB(raw); e = c.streams()[st]; d = bytearray(e.data); d[len(d) // 2] ^= 0x41; e.data = bytes(d)
+    o = str(tmp_path / 'm.rfa'); cfb.write(c, o); cur = str(tmp_path / 'cur.rfa'); shutil.copy(src, cur)
+    before = open(cur, 'rb').read()
+    with pytest.raises(sg.VerifyFailed, match='metadata'):
+        sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), open(o, 'rb').read(), {'modified': ['stream:' + st]})
+    assert open(cur, 'rb').read() == before

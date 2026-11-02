@@ -202,7 +202,7 @@ class DwgAdapter:
         out = {}
         ent_handles = set()
         for blk, e in m.entities():
-            out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, _plain(v)) for k, v in e.items())) + '|' + _plain(blk)).encode(), digest_size=12).digest()
+            out['ent:%x' % e['handle']] = hashlib.blake2b((repr(sorted((k, _plain(v)) for k, v in e.items() if not (k == 'xdicmissing' and m.version == 'AC1015'))) + '|' + _plain(blk)).encode(), digest_size=12).digest()   # AC1015: the flag is judged in extra_checks (item 119)
             ent_handles.add(e['handle']); self.owners[e['handle']] = e.get('owner')
             if str(e.get('kind', '')).startswith(('INSERT', 'MINSERT')) and isinstance(e.get('block_handle'), int): self.bheaders[e['handle']] = e['block_handle']
         self.blockhs |= set(getattr(m, 'blocks', {}))   # block records own entities but are not entities: declaring one must not excuse all its entities
@@ -352,6 +352,18 @@ class DwgAdapter:
         if hd_: bad.append(('header_section_bytes', 'hdr:%d' % hd_[0]))
         okm = _header_section_crc_ok(mo)
         if okm is False and _header_section_crc_ok(ms) is not False: bad.append(('header_section_crc', 'hdr'))
+        # c4x-dwgreadfuzz item 119: R2000 'no links' flag. Erasing/adding an entity makes the writer give its chain neighbours explicit prev/next links (flag 1 -> 0, same
+        # drawing). Allowed only in that direction (never 0 -> 1), only for AC1015 and only when the manifest adds or deletes something.
+        if getattr(ms, 'version', None) == 'AC1015' and getattr(mo, 'version', None) == 'AC1015':
+            try:
+                f0 = {e['handle']: e.get('xdicmissing') for _, e in ms.entities()}; f1 = {e['handle']: e.get('xdicmissing') for _, e in mo.entities()}
+                moved = [h for h in f0 if h in f1 and f0[h] != f1[h]]
+                declared_ = bool(manifest.get('added') or manifest.get('deleted'))
+                nb = [h for h in moved if not (f0[h] == 1 and f1[h] == 0)]
+                if nb or (moved and not declared_) or len(moved) > 2 * (len(manifest.get('added', ())) + len(manifest.get('deleted', ()))) + 2:
+                    bad.append(('xdic_flag_changed', 'ent:%x' % (nb or moved)[0]))
+            except Exception as e:
+                bad.append(('xdic_check_failed', str(e)[:60]))
         # c4x-dwgreadfuzz item 87: the element view compares ENTITIES by decoded fields only, so a CRC-consistent bit flip in a bit the decoder discards (e.g. the
         # three visual-style flag bits of common_entity) is invisible to it (5/295 CRC-fixed LINE flips accepted by every check). An object that is not declared
         # (modified/added/side effect) must therefore be byte-identical to the source.

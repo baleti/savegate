@@ -209,3 +209,18 @@ def test_dimension_add_tolerates_the_real_block_control_handle():
     a._pair = (M(), M())
     se = a.side_effects({'added': [0x99]})
     assert 'obj:4a1' in se and 'obj:10' not in se
+
+
+def test_r2000_neighbour_may_gain_explicit_links_but_not_lose_them():
+    import savegate.adapters as AD
+    class O:
+        def __init__(s): s.type = 19; s.raw = b'\x01'; s.data_bit = 0
+    class M:
+        def __init__(s, flags): s.version = 'AC1015'; s.objs = {h: O() for h in flags}; s.blocks = {}; s.f = flags
+        def entities(s): return [('*Model_Space', {'handle': h, 'xdicmissing': v}) for h, v in s.f.items()]
+    a = AD.DwgAdapter(); a.owners = {}; a.bheaders = {}; a.dimobjs = {}
+    def run(f0, f1, man): a._pair = (M(f0), M(f1)); return [x for x in a.extra_checks(man) if x[0].startswith('xdic')]
+    assert run({1: 1, 2: 1}, {1: 0, 2: 1}, {'deleted': [3]}) == []                                  # neighbour gained links
+    assert run({1: 1, 2: 1}, {1: 0, 2: 1}, {'modified': [2]}) != []                                 # nothing added/deleted: not a side effect
+    assert run({1: 0, 2: 1}, {1: 1, 2: 1}, {'deleted': [3]}) != []                                  # links lost (0 -> 1): refused
+    assert run({i: 1 for i in range(10)}, {i: 0 for i in range(10)}, {'deleted': [99]}) != []       # far more neighbours than one edit can touch

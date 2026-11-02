@@ -239,3 +239,11 @@ def test_output_page_padding_behind_the_payload_must_be_zero():
     bad = bytearray(m._buf); bad[a + 32 + 10 + 3] = 1; m._buf = bytes(bad)
     assert AD._page_padding_nonzero(m) == [1]
     m._buf = bytes(m._buf[:a + 32 + 10 + 3]) + b'\0' * 100; m.version = 'AC1015'; assert AD._page_padding_nonzero(m) is None
+
+
+def test_unreferenced_bytes_behind_the_encrypted_header_block_are_part_of_the_preamble_snapshot():
+    from savegate.adapters import _preamble_snap
+    a = bytes(make())
+    for off in (0xEC, 0xF5, 0xFF):
+        b = bytearray(a); b[off] ^= 4; assert _preamble_snap(bytes(b)) != _preamble_snap(a), hex(off)
+    b = bytearray(a); b[0x100] ^= 4; assert _preamble_snap(bytes(b)) == _preamble_snap(a)

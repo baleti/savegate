@@ -70,7 +70,7 @@ def _preamble_snap(buf):
     if bytes(buf[:6]) in (b'AC1018', b'AC1024', b'AC1027', b'AC1032'):
         # bytes 0x0D..0x10 = file address of the preview image: it moves with the file (measured on 2 real AC1032 no-edit rewrites: the writer repoints it and the new address holds
         # the preview sentinel). Compare the pointer by what it points at, not by its value.
-        b = bytearray(buf[:0x80]); a = int.from_bytes(b[0x0D:0x11], 'little'); b[0x0D:0x11] = bytes(4)
+        b = bytearray(buf[:0x80]) + bytearray(buf[0xEC:0x100]); a = int.from_bytes(b[0x0D:0x11], 'little'); b[0x0D:0x11] = bytes(4)   # + the 20 unreferenced bytes behind the encrypted header block (item 131: 43/43 outputs equal the source)
         ok = a == 0 or bytes(buf[a:a + 16]) == _PREVIEW_SENTINEL
         return _h(bytes(b)) + (':preview-ok' if ok else ':preview-broken')
     return None

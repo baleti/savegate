@@ -10,3 +10,19 @@ def test_zeroed_global_stream_reported(name):
     cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter(); assert A.source_damage(b) == []
     c = cfb.CFB(b); e = c.streams()[name]; e.data = bytes(len(e.data)); o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
     assert A.source_damage(open(o, 'rb').read())
+
+
+@pytest.mark.skipif(not os.path.exists(F), reason='public sample missing')
+@pytest.mark.parametrize('how', ['empty', 'zero'])
+def test_empty_or_zeroed_formats_latest_reported(how):
+    """c7x-rvtread2 65: Formats/Latest (the class/schema table) emptied or zeroed was accepted in 3/3 samples."""
+    cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
+    c = cfb.CFB(b); e = c.streams()['Formats/Latest']; e.data = b'' if how == 'empty' else bytes(len(e.data)); o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
+    assert A.source_damage(open(o, 'rb').read())
+
+
+@pytest.mark.skipif(not os.path.exists(F), reason='public sample missing')
+def test_truncated_png_preview_reported():
+    cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
+    c = cfb.CFB(b); e = c.streams()['RevitPreview4.0']; e.data = e.data[:len(e.data) // 2]; o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
+    assert A.source_damage(open(o, 'rb').read())

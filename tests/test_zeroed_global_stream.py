@@ -34,3 +34,10 @@ def test_truncated_basicfileinfo_reported():
     cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
     c = cfb.CFB(b); e = c.streams()['BasicFileInfo']; e.data = e.data[:len(e.data) // 2]; o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
     assert A.source_damage(open(o, 'rb').read())
+
+
+@pytest.mark.skipif(not os.path.exists(F), reason='public sample missing')
+def test_truncated_contents_below_floor_reported():
+    cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
+    c = cfb.CFB(b); e = c.streams()['Contents']; e.data = e.data[:100]; o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
+    assert A.source_damage(open(o, 'rb').read())

@@ -26,3 +26,11 @@ def test_truncated_png_preview_reported():
     cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
     c = cfb.CFB(b); e = c.streams()['RevitPreview4.0']; e.data = e.data[:len(e.data) // 2]; o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
     assert A.source_damage(open(o, 'rb').read())
+
+
+@pytest.mark.skipif(not os.path.exists(F), reason='public sample missing')
+def test_truncated_basicfileinfo_reported():
+    """c7x-rvtread2 66: every real BasicFileInfo ends with CRLF; a half-length one was accepted."""
+    cfb = pytest.importorskip('cfb'); b = open(F, 'rb').read(); A = adapters.RvtAdapter()
+    c = cfb.CFB(b); e = c.streams()['BasicFileInfo']; e.data = e.data[:len(e.data) // 2]; o = tempfile.mkdtemp() + '/z.rfa'; cfb.write(c, o)
+    assert A.source_damage(open(o, 'rb').read())

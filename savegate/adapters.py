@@ -1011,7 +1011,7 @@ class RvtAdapter:
                 if len(bytes(pt.tail).rstrip(b'\0')) > 2048:       # c4x-rvtgap: after the footer (nonzero span 176-685 B in 277 real partitions) only zero padding may follow (the writer pads to a full ECC page)
                     raise VerifyFailed('%s: non-zero bytes %d bytes into the partition tail (only zero padding may follow the footer)' % (n, len(bytes(pt.tail).rstrip(b'\0'))))
                 for k, m in enumerate(pt.mem):
-                    if len(m['raw']) > max(131088, (getattr(self, '_src_member_max', None) or {}).get(n, 0)):       # every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
+                    if len(m['raw']) > max(131088, min(147456, (getattr(self, '_src_member_max', None) or {}).get(n, 0))):       # c2x-rvtgap: allowance from the source capped (largest real member seen 146492, Revit 2018) so a mis-sequenced source_damage(output) cannot lift the limit; every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
                         raise VerifyFailed('%s member %d holds %d bytes, above the 131088 Revit limit' % (n, k, len(m['raw'])))
         except VerifyFailed: raise
         except Exception as ex: raise VerifyFailed('partition framing of the output could not be checked: %s %s' % (type(ex).__name__, ex))

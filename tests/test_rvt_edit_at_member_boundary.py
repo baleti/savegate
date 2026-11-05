@@ -51,3 +51,14 @@ def test_pristine_public_sample_passes_validate_member_limit(path):
     """2016-2018 Autodesk samples have members of 140-146 KB; the 131088 member limit must not refuse the unmodified file (fails without the per-stream source max)"""
     from savegate.adapters import RvtAdapter
     b = open(path, 'rb').read(); a = RvtAdapter(); a.source_damage(b); a.validate(b)
+
+
+def test_member_limit_allowance_from_the_source_is_capped(tmp_path):
+    """an output whose member is far above the limit must be refused even if source_damage was (wrongly) called on that output: the allowance is capped at 147456"""
+    import wledit
+    from savegate.adapters import RvtAdapter
+    p = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
+    ed = wledit.Editor(p); ed.set_strings([(7, 'FillPattern.m_name', 'H' + 'X' * 90000)])
+    o = str(tmp_path / 'o.rfa'); ed.save(o); b = open(o, 'rb').read(); a = RvtAdapter(); a.source_damage(b)
+    with pytest.raises(Exception, match='131088'):
+        a.validate(b)

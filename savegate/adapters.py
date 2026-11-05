@@ -812,6 +812,7 @@ class RvtAdapter:
         if len(h) < 2 or not h[0]: return []      # c4x-rvtgap: an EMPTY output map is no reason to skip (all partitions vanished)
         bad = self.span_checks(manifest)
         bad += self._delete_reference_checks(manifest)
+        bad += self._nonfinite_checks(manifest)
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()
@@ -871,6 +872,36 @@ class RvtAdapter:
         return errs
 
     MAX_IDS_FOR_REF_SCAN = 30000
+
+    def _nonfinite_checks(self, manifest):
+        """c2x-rvtgap 19: the RVT editor writes NaN/inf into a double field and the gate accepted it (declared edit of el:7 with no 'expect'); refuse non-finite floats in any
+        declared modified/added element of the OUTPUT."""
+        ids = set()
+        for kind in ('modified', 'added'):
+            for k in manifest.get(kind, ()):
+                if str(k).startswith('el:'):
+                    try: ids.add(int(str(k)[3:]))
+                    except ValueError: pass
+        h = getattr(self, '_buf_hist', [])
+        if not ids or len(h) < 2: return []
+        import math, tempfile, wledit
+        fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(h[1])); os.close(fd)
+        bad = []
+        try:
+            ed = wledit.Editor(p)
+            def walk(v, d=0):
+                if d > 12: return False
+                if isinstance(v, float): return math.isnan(v) or math.isinf(v)
+                if isinstance(v, dict): return any(walk(x, d + 1) for x in v.values())
+                if isinstance(v, (list, tuple)): return any(walk(x, d + 1) for x in v)
+                return False
+            for e in sorted(ids):
+                try: r = ed.trace(e)[2]
+                except Exception: continue
+                if walk(r.get('fields')): bad.append(('nonfinite_value', 'el:%d holds a NaN or infinite number in the output' % e))
+        except Exception as ex: bad.append(('nonfinite_unchecked', 'could not scan the declared elements for NaN/inf: %s' % ex))
+        finally: os.unlink(p)
+        return bad
 
     def _delete_reference_checks(self, manifest):
         """c2x-rvtgap 17: a declared delete of an element that another SOURCE element still references (owner, family, level, ... any ElementId field) leaves a dangling

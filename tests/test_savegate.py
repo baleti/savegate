@@ -1303,7 +1303,7 @@ def test_hardlinked_target_is_refused_unless_allowed(tmp_path):
 @pytest.mark.skipif(not os.path.isdir(ROS), reason='rosetta scenes absent (local only)')
 def test_rvt_declared_delete_leaves_only_the_declared_id_unresolved(tmp_path, monkeypatch):
     """c4x-rvtgap: Editor.delete keeps the id in ElemTable (no record behind it). The id-resolution check must accept exactly the declared deleted id and refuse the same output when another id is declared (element view OFF)"""
-    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0')
+    monkeypatch.setenv('SAVEGATE_RVT_ELEMENTS', '0'); monkeypatch.setenv('SAVEGATE_RVT_ALLOW_DANGLING_DELETE', '1')      # mechanics test: the deleted element is referenced (see test_rvt_delete_referenced.py)
     sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab'))
     pytest.importorskip('cfb'); wledit = pytest.importorskip('wledit')
     src = os.path.join(ROS, '2024_roof_ceiling_base.rte'); ed = wledit.Editor(src)

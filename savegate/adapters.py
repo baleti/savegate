@@ -633,7 +633,7 @@ class RvtAdapter:
         d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf)
         try: self._src_slack = self._slack_map(buf)
         except Exception: self._src_slack = None
-        self._src_member_max = self._member_max(buf)
+        self._src_member_max = self._member_max(buf); self._src_buf = buf
         return d
 
     @staticmethod
@@ -811,6 +811,7 @@ class RvtAdapter:
         h = getattr(self, '_mem_hist', [])
         if len(h) < 2 or not h[0]: return []      # c4x-rvtgap: an EMPTY output map is no reason to skip (all partitions vanished)
         bad = self.span_checks(manifest)
+        bad += self._delete_reference_checks(manifest)
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()
@@ -868,6 +869,42 @@ class RvtAdapter:
         ns = len(buf) // ss - 1
         if any(x != 0xFFFFFFFF for x in fat[ns:]): errs.append('FAT entries beyond the end of the file are not free')
         return errs
+
+    MAX_IDS_FOR_REF_SCAN = 30000
+
+    def _delete_reference_checks(self, manifest):
+        """c2x-rvtgap 17: a declared delete of an element that another SOURCE element still references (owner, family, level, ... any ElementId field) leaves a dangling
+        id that no other check sees (the gate accepted deleting elements 0, 11, 14 of the 2024 sample family, each referenced by others). Refuse unless no other element
+        names it; if the references cannot be scanned (no source buffer, too many elements) refuse as well."""
+        dels = set()
+        for k in manifest.get('deleted', ()):
+            try: dels.add(int(str(k).split(':')[-1]))
+            except ValueError: pass
+        if not dels or os.environ.get('SAVEGATE_RVT_ALLOW_DANGLING_DELETE'): return []      # env only for tests of the delete mechanics
+        buf = getattr(self, '_src_buf', None)
+        try:
+            if buf is None: raise ValueError('no source buffer')
+            import tempfile, wledit
+            fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(buf)); os.close(fd)
+            try:
+                ed = wledit.Editor(p); ids = sorted(ed.m.ids)
+                if len(ids) > self.MAX_IDS_FOR_REF_SCAN: raise ValueError('%d elements, reference scan limit %d' % (len(ids), self.MAX_IDS_FOR_REF_SCAN))
+                found = {}
+                def walk(v, me, depth=0):
+                    if depth > 12: return
+                    if isinstance(v, dict):
+                        for x in v.values(): walk(x, me, depth + 1)
+                    elif isinstance(v, (list, tuple)):
+                        for x in v: walk(x, me, depth + 1)
+                    elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me: found.setdefault(int(v), []).append(me)
+                for e in ids:
+                    try: r = ed.trace(e)[2]
+                    except Exception: continue
+                    walk(r.get('fields'), e)
+            finally: os.unlink(p)
+        except Exception as ex:
+            return [('delete_references_unchecked', 'cannot prove that no element references the deleted id(s): %s' % ex)]
+        return [('dangling_after_delete', 'el:%d is still referenced by elements %s' % (d, sorted(set(r))[:6])) for d, r in sorted(found.items())]
 
     @staticmethod
     def _member_max(buf):

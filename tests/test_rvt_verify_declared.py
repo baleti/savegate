@@ -374,8 +374,9 @@ def _deleted_bytes(path, eid):
         o = os.path.join(d, 'o.rfa'); ed.save(o); return pn, open(o, 'rb').read()
 
 
-def test_element_delete_through_the_gate_declared_is_judged_undeclared_is_refused(tmp_path):
+def test_element_delete_through_the_gate_declared_is_judged_undeclared_is_refused(tmp_path, monkeypatch):
     import savegate as sg
+    monkeypatch.setenv('SAVEGATE_RVT_ALLOW_DANGLING_DELETE', '1')      # mechanics test: el:7 is referenced by el:17 (see test_rvt_delete_referenced.py)
     pn, new = _deleted_bytes(SRC, 7)
     cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
     doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))

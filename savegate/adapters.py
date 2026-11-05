@@ -633,6 +633,7 @@ class RvtAdapter:
         d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf)
         try: self._src_slack = self._slack_map(buf)
         except Exception: self._src_slack = None
+        self._src_member_max = self._member_max(buf)
         return d
 
     @staticmethod
@@ -869,6 +870,21 @@ class RvtAdapter:
         return errs
 
     @staticmethod
+    def _member_max(buf):
+        """c2x-rvtgap: largest decoded gzip member per Partitions stream of the source. 2016-2018 Autodesk files carry members of 140-146 KB, so the 131088 limit
+        (true for 2019+) must not refuse a pristine older file; an output member may be as large as max(131088, the source's own largest in that stream)"""
+        try:
+            import cfb, rvtw, wlpart
+            out = {}
+            for n, e in cfb.CFB(buf).streams().items():
+                if not n.startswith('Partitions/'): continue
+                st = rvtw.Stream(e.data)
+                if len(st.payload) < 40: continue
+                out[n] = max(len(m['raw']) for m in wlpart.Partition(st).mem)
+            return out
+        except Exception: return {}
+
+    @staticmethod
     def _slack_map(buf):
         """c4x-rvtgap 150: nonzero bytes after the end of a large stream in its last sector, and in free sectors (mini-stream tails excluded), keyed by stream name / sector index"""
         import cfb, struct
@@ -927,7 +943,7 @@ class RvtAdapter:
                 if len(bytes(pt.tail).rstrip(b'\0')) > 2048:       # c4x-rvtgap: after the footer (nonzero span 176-685 B in 277 real partitions) only zero padding may follow (the writer pads to a full ECC page)
                     raise VerifyFailed('%s: non-zero bytes %d bytes into the partition tail (only zero padding may follow the footer)' % (n, len(bytes(pt.tail).rstrip(b'\0'))))
                 for k, m in enumerate(pt.mem):
-                    if len(m['raw']) > 131088:       # every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
+                    if len(m['raw']) > max(131088, (getattr(self, '_src_member_max', None) or {}).get(n, 0)):       # every real 2024/2026 file tops out at exactly 131088 (12 files); Revit rejects larger members (vcheck rule)
                         raise VerifyFailed('%s member %d holds %d bytes, above the 131088 Revit limit' % (n, k, len(m['raw'])))
         except VerifyFailed: raise
         except Exception as ex: raise VerifyFailed('partition framing of the output could not be checked: %s %s' % (type(ex).__name__, ex))

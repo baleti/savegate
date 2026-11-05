@@ -81,7 +81,12 @@ def backup_bytes(path, data):
 def _prune(path, keep, max_bytes=0):
     """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
     bl = list_backups(path)
-    drop = bl[keep:]
+    # c2x-rvtgap: the OLDEST backup is the pristine original of the first overwrite; plain 'newest N' pruning deleted it after N+1 saves (25 saves with keep=20 left no copy of the
+    # original). It is pinned: the window is the newest keep-1 plus the oldest (keep>=2; with keep<2 behaviour is unchanged).
+    if keep >= 2 and len(bl) > keep:
+        drop = bl[keep - 1:-1]; bl = bl[:keep - 1] + bl[-1:]; keep = len(bl)
+    else:
+        drop = bl[keep:]
     if max_bytes:
         tot = 0
         for i, (name, p, sz) in enumerate(bl[:keep]):

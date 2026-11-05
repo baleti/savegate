@@ -1,6 +1,6 @@
 """Format adapters: sniff version, snapshot (key -> comparable) for the verify diff, structural validate.
 A snapshot key present in the source and output must be equal unless the manifest lists it as modified."""
-import hashlib, os, sys, re
+import hashlib, os, sys, re, struct
 from .errors import UnsupportedVersion, VerifyFailed
 
 DWG_WRITABLE = ('AC1015', 'AC1018', 'AC1024', 'AC1027', 'AC1032')
@@ -630,7 +630,10 @@ class RvtAdapter:
         return v
 
     def source_damage(self, buf):
-        d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf); return d
+        d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf)
+        try: self._src_slack = self._slack_map(buf)
+        except Exception: self._src_slack = None
+        return d
 
     @staticmethod
     def _global_tails(buf):
@@ -865,6 +868,26 @@ class RvtAdapter:
         if any(x != 0xFFFFFFFF for x in fat[ns:]): errs.append('FAT entries beyond the end of the file are not free')
         return errs
 
+    @staticmethod
+    def _slack_map(buf):
+        """c4x-rvtgap 150: nonzero bytes after the end of a large stream in its last sector, and in free sectors (mini-stream tails excluded), keyed by stream name / sector index"""
+        import cfb, struct
+        c = cfb.CFB(buf); ss = c.ss; out = {}
+        fat = []
+        fat = list(c.fat)
+        ns = len(buf) // ss - 1
+        for name, e in c.streams().items():
+            if e.size >= c.cutoff and e.size % ss:
+                s = e.start; k = 0
+                while fat[s] < 0xFFFFFFFA and k <= len(fat): s = fat[s]; k += 1
+                t = bytes(buf[(s + 1) * ss + e.size % ss:(s + 2) * ss])
+                if any(t): out[name] = t
+        for i, x in enumerate(fat[:ns]):
+            if x == 0xFFFFFFFF:
+                t = bytes(buf[(i + 1) * ss:(i + 2) * ss])
+                if any(t): out['free:%d' % i] = t
+        return out
+
     def validate(self, buf):
         import cfb
         c = cfb.CFB(buf)
@@ -873,6 +896,12 @@ class RvtAdapter:
             if need not in s: raise VerifyFailed('stream %s missing in output' % need)
         if len(buf) != (c.nsectors + 1) * c.ss + (512 - c.ss if c.major == 3 else 0) and len(buf) % c.ss:
             raise VerifyFailed('container length is not sector aligned')
+        src_sl = getattr(self, '_src_slack', None)
+        if src_sl is not None:    # only against a known source: real Revit files carry nonzero slack, the writer pads with zeros; new nonzero slack that is not the source's own is refused
+            try:
+                for k, t in self._slack_map(buf).items():
+                    if src_sl.get(k) != t: raise VerifyFailed('%s: slack after the stream end / free sector is nonzero and not the source\'s own' % k)
+            except (IndexError, struct.error, ValueError): raise VerifyFailed('FAT chain unreadable while checking slack')
         sl = self._container_slack(buf, c)      # c4x-rvtgap: bytes the container format reserves as zero/free must stay so (0 violations in 277 real files)
         if sl: raise VerifyFailed('container reserved/free area is not clean: %s' % '; '.join(sl[:3]))
         sg_ = getattr(self, '_src_gtails', None)

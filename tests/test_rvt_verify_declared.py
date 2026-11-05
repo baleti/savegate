@@ -723,3 +723,20 @@ def test_directory_entry_padding_sibling_and_storage_size_flips_are_refused(tmp_
     with pytest.raises(sg.SaveError):
         sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
     assert open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('stream,where', [('Partitions/67', 'first'), ('Partitions/67', 'last'), ('Global/ElemTable', 'mid'), ('Global/Latest', 'first'), ('Formats/Latest', 'last')])
+def test_flip_in_the_slack_after_a_stream_end_is_refused(tmp_path, stream, where):
+    import savegate as sg
+    sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); import cfb
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    buf = bytearray(_edited_bytes(SRC, 7, 'HorizontalZ')); c = cfb.CFB(bytes(buf)); ss = c.ss
+    e = c.streams()[stream]; assert e.size % ss, 'no slack in this stream'
+    s = e.start
+    while c.fat[s] < 0xFFFFFFFA: s = c.fat[s]
+    r = e.size % ss; k = {'first': r, 'mid': (r + ss) // 2, 'last': ss - 1}[where]
+    buf[(s + 1) * ss + k] ^= 1
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError):
+        sg.save(doc, bytes(buf), {'modified': ['stream:Partitions/67', 'el:7'], 'expect': {7: {'FillPattern.m_name': 'HorizontalZ'}}})
+    assert open(cur, 'rb').read() == before

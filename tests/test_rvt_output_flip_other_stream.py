@@ -7,8 +7,9 @@ YEARS = [y for y in ('2024', '2026') if os.path.exists(R % y)]
 pytestmark = pytest.mark.skipif(not YEARS, reason='no public sample')
 
 
+@pytest.mark.parametrize('mode', ['flip', 'zero16'])
 @pytest.mark.parametrize('year', YEARS)
-def test_flip_in_other_streams_refused(tmp_path, year):
+def test_flip_in_other_streams_refused(tmp_path, year, mode):
     SRC = R % year
     import savegate as sg, wledit, cfb
     from savegate.adapters import RvtAdapter
@@ -18,7 +19,8 @@ def test_flip_in_other_streams_refused(tmp_path, year):
     for k in names:
         L = len(good.streams()[k].data)
         for pos in sorted({0, L // 2, L - 1}):
-            c = cfb.CFB(open(o, 'rb').read()); d = bytearray(c.streams()[k].data); d[pos] ^= 0x10; c.streams()[k].data = bytes(d)
+            c = cfb.CFB(open(o, 'rb').read()); orig = bytes(c.streams()[k].data); d = bytearray(c.streams()[k].data); (d.__setitem__(pos, d[pos] ^ 0x10) if mode == 'flip' else d.__setitem__(slice(pos, min(pos + 16, L)), bytes(min(16, L - pos)))); c.streams()[k].data = bytes(d)
+            if bytes(d) == orig: continue          # zeroing already-zero bytes changes nothing
             p = str(tmp_path / 'f.bin'); cfb.write(c, p); bad = open(p, 'rb').read()
             cur = str(tmp_path / 'cur.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read(); n += 1
             doc = sg.open_doc(cur, RvtAdapter(), sg.Config(allow_overwrite=True, require_gate=False))

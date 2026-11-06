@@ -143,6 +143,13 @@ def _check_writable_target(path, cfg):
     try: nl = os.stat(long_path(path)).st_nlink
     except OSError: nl = 1
     if nl > 1 and not cfg.allow_hardlink_break: raise HardlinkTarget('%s has %d hard links: saving would detach the other names (they keep the old content); choose Save As or set allow_hardlink_break' % (path, nl))
+    if os.name == 'posix' and os.path.exists(path):      # c7x-rvtread2 193: another process holds an exclusive advisory lock -> replace-by-rename would orphan its handle and silently drop its later writes
+        try:
+            import fcntl
+            with open(path, 'rb') as _f:
+                try: fcntl.flock(_f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except (BlockingIOError, PermissionError): raise Locked('%s is locked by another process (exclusive flock); close it there or choose Save As' % path)
+        except (ImportError, OSError): pass
     if not cfg.allow_readonly and os.path.exists(long_path(path)) and atomic.is_readonly(path):
         raise ReadOnlyTarget('%s is read-only: clear the flag, choose Save As, or set allow_readonly' % path)
 

@@ -15,7 +15,11 @@ class Journal:
         except OSError: import tempfile; self.dir = tempfile.gettempdir()
         self.id = time.strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:6]
         self.path = os.path.join(self.dir, self.id + '.jsonl')
-        self.f = open(self.path, 'a', encoding='utf-8')
+        try: self.f = open(self.path, 'a', encoding='utf-8')
+        except OSError:      # c7x-rvtread2 212: a read-only/unwritable journal dir must not block opening a document; fall back to the temp dir, else a null sink
+            import tempfile
+            try: self.path = os.path.join(tempfile.gettempdir(), self.id + '.jsonl'); self.f = open(self.path, 'a', encoding='utf-8')
+            except OSError: self.path = os.devnull; self.f = open(os.devnull, 'a')
         self.log('open', source=os.path.abspath(source_path))
 
     def log(self, kind, **kw):

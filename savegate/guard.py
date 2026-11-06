@@ -105,15 +105,19 @@ class Lock:
         try: raw = self._read_raw()
         except FileNotFoundError: return None
         except OSError: return False                                  # cannot read it right now (Windows sharing): treat as live
-        try: d = json.loads(raw)
+        try:
+            d = json.loads(raw)
+            if not isinstance(d, dict): raise ValueError('lock content is not an object')       # c5x-rvtgap: '999999' or '[]' crashed the stale check
         except ValueError:
             # empty / partial: a holder between O_EXCL create and its owner write; only old ones are stale
             try: return time.time() - os.stat(long_path(self.lp)).st_mtime > 10
             except FileNotFoundError: return None
             except OSError: return False
         self._judged = raw
-        if time.time() - d.get('time', 0) > self.stale_after: return True
-        return d.get('host') == socket.gethostname() and not _pid_alive(int(d.get('pid', 0)))
+        try:
+            if time.time() - float(d.get('time', 0)) > self.stale_after: return True
+            return d.get('host') == socket.gethostname() and not _pid_alive(int(d.get('pid', 0)))
+        except (TypeError, ValueError): return time.time() - os.stat(long_path(self.lp)).st_mtime > 10
 
     def _take_over_stale(self):
         """move the stale lock aside atomically (only one racer wins the rename); if what we moved is not what we judged, a new holder

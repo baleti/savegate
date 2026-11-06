@@ -19,13 +19,21 @@ def backup_dirs(path):
 _CASE_INSENSITIVE = sys.platform in ('win32', 'darwin')      # c4x-rvtgap: 'Model.rvt' and 'model.RVT' are one file there; on Linux they are two and must NOT share backups (wrong-file restore)
 
 
+def _bn(path):
+    """file name used in backup names; long names are shortened (c7x-rvtread2 199: name + stamp + hash + .part must stay under 255 bytes)"""
+    n = os.path.basename(path)
+    if len(n.encode('utf-8', 'surrogatepass')) <= 150: return n
+    import hashlib
+    return n[:60] + '~' + hashlib.sha1(n.encode('utf-8', 'surrogatepass')).hexdigest()[:12]
+
+
 def _fold(x):
     return x.lower() if _CASE_INSENSITIVE else x
 
 
 def list_backups(path):
     """newest first: [(name, full_path, size)]"""
-    n = os.path.basename(path); out = []
+    n = _bn(path); out = []
     for bd in backup_dirs(path):
         try: names = os.listdir(bd)
         except OSError: continue
@@ -43,7 +51,7 @@ def make_backup(path, keep=20, max_bytes=0, expect_sha=None):
     """copy `path` into the backup store, verify by hash, return backup path. Raises DiskError when no store works."""
     src_hash = sha256_file(path)
     stamp = time.strftime('%Y%m%d-%H%M%S') + '-%03d' % (time.time() * 1000 % 1000)
-    name = '%s.%s-%s' % (os.path.basename(path), stamp, src_hash[:8])
+    name = '%s.%s-%s' % (_bn(path), stamp, src_hash[:8])
     last = None
     for bd in backup_dirs(path):
         try:
@@ -71,7 +79,7 @@ def backup_bytes(path, data):
     last = None
     for bd in backup_dirs(path):
         try:
-            os.makedirs(long_path(bd), exist_ok=True); dst = os.path.join(bd, '%s.%s-%s' % (os.path.basename(path), stamp, h[:8])); part = dst + '.part'
+            os.makedirs(long_path(bd), exist_ok=True); dst = os.path.join(bd, '%s.%s-%s' % (_bn(path), stamp, h[:8])); part = dst + '.part'
             with open(long_path(part), 'wb') as b: b.write(data); b.flush(); full_fsync(b.fileno())
             os.replace(long_path(part), long_path(dst)); fsync_dir(bd); return dst
         except OSError as e: last = e
@@ -81,7 +89,7 @@ def backup_bytes(path, data):
 def sweep_orphan_parts(path, idle=300):
     """c5x-rvtgap: a save killed during the backup copy leaves NAME.part behind for ever; remove .part files of this file's backups that nobody has written to for `idle` s
     (a live copy keeps touching its mtime)."""
-    base = os.path.basename(path) + '.'
+    base = _bn(path) + '.'
     for bd in backup_dirs(path):
         try: names = os.listdir(long_path(bd))
         except OSError: continue

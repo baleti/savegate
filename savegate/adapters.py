@@ -814,6 +814,8 @@ class RvtAdapter:
         bad += self._delete_reference_checks(manifest)
         bad += self._nonfinite_checks(manifest)
         bad += self._dangling_ref_checks(manifest)
+        bad += self._adler_checks(manifest)
+        bad += self._byte_window_checks(manifest)
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()
@@ -922,6 +924,87 @@ class RvtAdapter:
             os.unlink(p)
             if p2: os.unlink(p2)
         return bad
+
+    def _byte_window_checks(self, manifest):
+        """c5x-rvtgap SEV1: 1 of 40 random single-bit flips in the 22-byte record headers between element records (next to a valid declared edit) was ACCEPTED: the element view
+        decodes fields only, the 1 KB block rule allows ~8 KB per element. Byte-exact rule: in the inflated partition of the declared element(s), the differing window
+        (everything between the common prefix and the common suffix of source and output) must lie inside the declared elements' own records (field span plus 40 bytes of
+        record header in front, 8 behind). Applies to pure in-place edits (no add/delete) of elements that live in one partition stream."""
+        if manifest.get('added') or manifest.get('deleted'): return []
+        ids = []
+        for k in manifest.get('modified', ()):
+            if str(k).startswith('el:'):
+                try: ids.append(int(str(k)[3:]))
+                except ValueError: pass
+        h = getattr(self, '_buf_hist', [])
+        if not ids or len(h) < 2 or not h[0] or not h[1]: return []
+        import tempfile
+        paths = []
+        try:
+            import wledit, cfb, rvtw, wlpart
+            def mk(b):
+                fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
+            ed = mk(h[0]); pn = None; lo, hi = None, None
+            for e in ids:
+                t = ed.trace(e)
+                if pn not in (None, t[0]): return []                   # several partitions: other rules cover it
+                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3])
+                lo = l if lo is None else min(lo, l); hi = u if hi is None else max(hi, u)
+            def payload(buf):
+                st = rvtw.Stream(cfb.CFB(bytes(buf)).streams()[pn].data); pt = wlpart.Partition(st)
+                return b''.join(bytes(m['raw']) for m in pt.mem)
+            A = payload(h[0]); B = payload(h[1])
+        except Exception as ex: return [('byte_window_unchecked', 'could not compare the declared partition byte for byte: %s' % str(ex)[:150])]
+        finally:
+            for p in paths:
+                try: os.unlink(p)
+                except OSError: pass
+        if A == B: return []
+        n = min(len(A), len(B)); p = 0
+        while p < n and A[p] == B[p]: p += 1
+        q = 0
+        while q < n - p and A[len(A) - 1 - q] == B[len(B) - 1 - q]: q += 1
+        a_end = len(A) - q
+        if p < lo - 40 or a_end > hi + 8:
+            return [('changed_outside_declared_record', '%s: bytes %d..%d differ, the declared element(s) occupy %d..%d' % (pn, p, a_end, lo, hi))]
+        return []
+
+    def _adler_checks(self, manifest):
+        """c5x-rvtgap SEV1: a single-bit flip in the 4-byte Adler32 field of a record header (between element records, invisible to the element view) was ACCEPTED
+        (1 of 40 random header-gap flips on the 2024 public family; 99% of its records carry a valid Adler32 over the record body). Every record whose Adler32 is valid in the
+        SOURCE must still be valid in the OUTPUT (the editor recomputes it for the records it edits); a record that disappears counts as lost."""
+        h = getattr(self, '_buf_hist', [])
+        if len(h) < 2 or not h[0] or not h[1]: return []
+        import tempfile, struct, zlib
+        paths = []
+        try:
+            import numpy as np, cfb, rvtw, wlpart, rvt_scan as S, rvt_inventory as I
+            def amap(buf):
+                fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(buf)); os.close(fd); paths.append(p)
+                o, cls, ids = S.load(p); W = S.id_size(cls); hs = 12 + W; etags = I.element_tags(cls)
+                c = cfb.CFB(bytes(buf)); out = {}
+                arr = np.array(sorted(ids), dtype=np.uint32 if W == 4 else np.uint64)
+                for n, e in c.streams().items():
+                    if not n.startswith('Partitions/'): continue
+                    pt = wlpart.Partition(rvtw.Stream(e.data), hs=hs); bj = b''.join(bytes(m['raw']) for m in pt.mem)
+                    for i in S.header_candidates_tagged(bj, arr, W, etags):
+                        i = int(i); L = struct.unpack_from('<I', bj, i + hs - 4)[0]
+                        if L > len(bj) - i - hs or L < 2: continue
+                        eid = int.from_bytes(bj[i + 4:i + 4 + W], 'little'); st = struct.unpack_from('<I', bj, i + 4 + W)[0]
+                        out[(n, eid)] = (zlib.adler32(bj[i + 4 + W + 8:i + hs + L]) & 0xffffffff == st)
+                return out
+            a = amap(h[0]); b = amap(h[1])
+        except Exception as ex: return [('adler_unchecked', 'could not verify the record checksums of source and output: %s' % str(ex)[:150])]
+        finally:
+            for p in paths:
+                try: os.unlink(p)
+                except OSError: pass
+        gone = set()
+        for k in manifest.get('deleted', ()):
+            try: gone.add(int(str(k).split(':')[-1]))
+            except ValueError: pass
+        lost = sorted(k[1] for k, v in a.items() if v and not b.get(k, False) and k[1] not in gone)
+        return [('record_checksum_broken', '%d record(s) with a valid Adler32 in the source are invalid or missing in the output (element ids %s)' % (len(lost), lost[:6]))] if lost else []
 
     def _dangling_ref_checks(self, manifest):
         """c5x-rvtgap 28: an edit that points an ElementId field of a declared element at an id that does not exist (the gate accepted 193 of 198 such edits on the

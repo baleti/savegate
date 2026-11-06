@@ -38,7 +38,7 @@ def test_nonfinite_double_is_written_by_the_editor_gate_must_stop_it(tmp_path, v
     assert math.isnan(got) or math.isinf(got)
 
 
-@pytest.mark.parametrize('v', [float('nan'), float('inf'), -float('inf')])
+@pytest.mark.parametrize('v', [float('nan'), float('inf'), -float('inf'), 1e300, -1e200])   # 1e300: c2x-rvtgap, finite but absurd
 def test_gate_refuses_nonfinite_number_in_a_declared_element(tmp_path, v):
     import savegate as sg, shutil
     o = _edit(tmp_path, v); new = open(o, 'rb').read(); cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
@@ -54,3 +54,14 @@ def test_gate_still_accepts_a_finite_declared_numeric_edit(tmp_path):
     doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
     sg.save(doc, new, {'modified': ['stream:Partitions/67', 'el:7']})
     assert open(cur, 'rb').read() == new
+
+
+@pytest.mark.parametrize('val', ['a\x00b', 'a\r\nb', 'ab\u202eba'])
+def test_gate_refuses_control_chars_in_an_edited_name(tmp_path, val):
+    import savegate as sg, shutil, wledit
+    ed = wledit.Editor(SRC); ed.set_strings([(7, 'FillPattern.m_name', val)])
+    o = str(tmp_path / 'o.rfa'); ed.save(o); new = open(o, 'rb').read(); cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
+    doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError):
+        sg.save(doc, new, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == before

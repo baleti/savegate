@@ -891,7 +891,8 @@ class RvtAdapter:
             ed = wledit.Editor(p)
             def walk(v, d=0):
                 if d > 12: return False
-                if isinstance(v, float): return math.isnan(v) or math.isinf(v)
+                if isinstance(v, float): return math.isnan(v) or math.isinf(v) or abs(v) > 1e100       # c2x-rvtgap: 1e300 is finite but no real model value
+                if isinstance(v, str): return any(ord(c) < 32 and c not in '\t' or c in '\u202e\u2066\u2067\u2068\u2069\u200b\ufeff' or 0xD800 <= ord(c) <= 0xDFFF for c in v)
                 if isinstance(v, dict): return any(walk(x, d + 1) for x in v.values())
                 if isinstance(v, (list, tuple)): return any(walk(x, d + 1) for x in v)
                 return False

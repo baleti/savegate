@@ -44,7 +44,10 @@ bk = []
 for i in range(200):
     n = rng.randint(1, 12); sizes = [rng.randint(1, 5000) for _ in range(n)]       # newest first
     keep = rng.randint(1, 8); cap = rng.choice([0, 0, 3000, 8000, 15000])
-    drop = list(sizes[keep:]); kept = sizes[:keep]; tot = 0
+    # the oldest backup (pristine original) is pinned: window = newest keep-1 + oldest when keep >= 2 and there are more than keep (backup._prune, c2x-rvtgap)
+    if keep >= 2 and n > keep: kept = sizes[:keep - 1] + sizes[-1:]; drop = list(sizes[keep - 1:-1])
+    else: kept = sizes[:keep]; drop = list(sizes[keep:])
+    tot = 0
     if cap:
         for j, sz in enumerate(kept):
             tot += sz

@@ -197,6 +197,24 @@ def save(doc, new_bytes, manifest=None, force=False, verify=None):
         raise DiskError('save failed, original untouched: %s' % e) from e
 
 
+def _preflight_space(doc, new_bytes):
+    """c5x-rvtgap: refuse BEFORE doing any work when a volume cannot hold what the save writes: the new file next to the original (temp copy), the backup of the
+    original, and about twice the new size of scratch in the temp dir for the gate's checks. (A full disk was seen to make the checks fail with ENOSPC midway; safe, but late
+    and cryptic.) Only checks what can be measured; unknown volumes are skipped."""
+    import shutil, tempfile
+    need_new = len(new_bytes); need_old = len(doc.buf)
+    checks = [(os.path.dirname(os.path.abspath(doc.path)), need_new + (1 << 20), 'the folder of the file'), (tempfile.gettempdir(), 2 * need_new + (1 << 20), 'the temp folder')]
+    try:
+        from .backup import backup_dirs
+        checks.append((backup_dirs(doc.path)[0], need_old + (1 << 20), 'the backup folder'))
+    except Exception: pass
+    for d, need, what in checks:
+        while d and not os.path.isdir(d): d = os.path.dirname(d)
+        try: free = shutil.disk_usage(d).free
+        except OSError: continue
+        if free < need: raise DiskError('not enough free space in %s (%s): %d MB free, %d MB needed; nothing was written, the original is untouched' % (what, d, free >> 20, need >> 20))
+
+
 def _save(doc, new_bytes, manifest, force, verify):
     """overwrite doc.path. Original is backed up first; verify failure/conflict/IO error leaves it untouched."""
     t0 = time.time(); cfg = doc.cfg; verify = cfg.verify if verify is None else verify
@@ -205,6 +223,7 @@ def _save(doc, new_bytes, manifest, force, verify):
     if cfg.require_gate and not gate_open(fmt, doc.version, cfg):
         raise GateClosed('overwrite of %s %s is not enabled: the oracle test matrix is not green' % (fmt, doc.version))
     _check_writable_target(doc.path, cfg)
+    _preflight_space(doc, new_bytes)
     if hasattr(doc.adapter, 'source_damage'):
         dm = doc.adapter.source_damage(doc.buf)
         if dm: raise VerifyFailed('the file is damaged (%d problem(s), first: %s); overwrite refused, the file was not touched. Use SAVE AS to write a copy.' % (len(dm), dm[0]), dict(source_damage=dm[:20]))

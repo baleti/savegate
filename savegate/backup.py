@@ -78,8 +78,24 @@ def backup_bytes(path, data):
     raise DiskError('cannot write a backup of %s: %s' % (path, last))
 
 
+def sweep_orphan_parts(path, idle=300):
+    """c5x-rvtgap: a save killed during the backup copy leaves NAME.part behind for ever; remove .part files of this file's backups that nobody has written to for `idle` s
+    (a live copy keeps touching its mtime)."""
+    base = os.path.basename(path) + '.'
+    for bd in backup_dirs(path):
+        try: names = os.listdir(long_path(bd))
+        except OSError: continue
+        for n in names:
+            if n.endswith('.part') and n.startswith(base):
+                p = os.path.join(bd, n)
+                try:
+                    if time.time() - os.stat(long_path(p)).st_mtime > idle: os.remove(long_path(p))
+                except OSError: pass
+
+
 def _prune(path, keep, max_bytes=0):
     """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
+    sweep_orphan_parts(path)
     bl = list_backups(path)
     # c2x-rvtgap: the OLDEST backup is the pristine original of the first overwrite; plain 'newest N' pruning deleted it after N+1 saves (25 saves with keep=20 left no copy of the
     # original). It is pinned: the window is the newest keep-1 plus the oldest (keep>=2; with keep<2 behaviour is unchanged).

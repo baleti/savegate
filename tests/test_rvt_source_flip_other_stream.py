@@ -13,10 +13,16 @@ def test_source_flip_in_untouched_stream(tmp_path, stream):
     if stream not in st: pytest.skip('stream absent')
     e = st[stream]; ss = c.ss; fat = list(c.fat)
     mid = e.size // 2; s = e.start
-    if e.size < c.cutoff: pytest.skip('mini stream')
-    for _ in range(mid // ss): s = fat[s]
-    off = (s + 1) * ss + mid % ss
+    if e.size < c.cutoff:                       # mini stream: walk the miniFAT, then the root entry's sector chain
+        for _ in range(mid // c.mss): s = c.minifat[s]
+        mo = s * c.mss + mid % c.mss; r = c.entries[0].start
+        for _ in range(mo // ss): r = fat[r]
+        off = (r + 1) * ss + mo % ss
+    else:
+        for _ in range(mid // ss): s = fat[s]
+        off = (s + 1) * ss + mid % ss
     bad = bytearray(good); bad[off] ^= 0x01; bad = bytes(bad)
+    assert [k for k, v in cfb.CFB(bad).streams().items() if v.data != st[k].data] == [stream], 'flip must land in exactly the intended stream'
     ed = wledit.Editor(SRC); ed.set_strings([(7, 'FillPattern.m_name', 'Edited')])
     o = str(tmp_path / 'o.rfa'); ed.save(o); new = open(o, 'rb').read()
     cur = str(tmp_path / 'c.rfa'); open(cur, 'wb').write(bad)

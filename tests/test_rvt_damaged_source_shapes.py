@@ -24,3 +24,17 @@ def test_damaged_source_shape_not_overwritten(tmp_path, how):
     A = cfb.CFB(good).streams(); B = cfb.CFB(open(cur, 'rb').read()).streams()
     assert how != 'trunc_sector', 'a file missing whole sectors must not be accepted'
     assert [k for k in A if k not in B or A[k].data != B[k].data] == ['Partitions/67']
+
+
+@pytest.mark.parametrize('n', [4096, 5000, 70000])   # the 2024 sample uses 4096-byte sectors; a tail shorter than one sector is not detectable as appended sectors and stays accepted (documented residual)
+def test_appended_whole_sectors_refused(tmp_path, n):
+    """c2x-rvtgap 364: data appended after the compound file end (>= 1 sector) is dropped by a rewrite, so the gate must refuse and leave the file untouched."""
+    import savegate as sg, wledit
+    good = open(SRC, 'rb').read()
+    ed = wledit.Editor(SRC); ed.set_strings([(7, 'FillPattern.m_name', 'Edited')])
+    o = str(tmp_path / 'o.rfa'); ed.save(o); new = open(o, 'rb').read()
+    bad = good + os.urandom(n); cur = str(tmp_path / 'c.rfa'); open(cur, 'wb').write(bad)
+    try: doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False))
+    except Exception: return
+    with pytest.raises(sg.SaveError): sg.save(doc, new, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == bad

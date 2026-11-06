@@ -629,8 +629,19 @@ class RvtAdapter:
                                      'writable year, or save the edit as a new file with the writer.' % (v, ', '.join(RVT_WRITABLE)))
         return v
 
+    @staticmethod
+    def _unreferenced_tail(buf):
+        """c2x-rvtgap 45/364: whole sectors after the last FAT-referenced sector would be dropped by a rewrite (the writer emits a compact container); refuse so appended data is never lost silently"""
+        try:
+            import cfb
+            c = cfb.CFB(bytes(buf)); last = max(i for i, v in enumerate(c.fat) if v != 0xFFFFFFFF and i < c.nsectors)
+            n = c.nsectors - (last + 1)
+            return ['%d whole sector(s) after the last used sector would be dropped by a save' % n] if n > 0 else []
+        except Exception:
+            return []
+
     def source_damage(self, buf):
-        d = self._damage(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf)
+        d = self._damage(buf); d = list(d) + self._unreferenced_tail(buf); self._src_dmg = set(d); self._src_gtails = self._global_tails(buf)
         try: self._src_slack = self._slack_map(buf)
         except Exception: self._src_slack = None
         self._src_member_max = self._member_max(buf); self._src_buf = buf

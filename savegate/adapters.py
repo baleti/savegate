@@ -898,7 +898,7 @@ class RvtAdapter:
                 if isinstance(v, float):
                     return [repr(v)] if (math.isnan(v) or math.isinf(v) or abs(v) > 1e100) else []       # c2x-rvtgap: 1e300 is finite but no real model value
                 if isinstance(v, str):
-                    return [repr(v)] if any(ord(c) < 32 and c not in '\t' or c in '\u202e\u2066\u2067\u2068\u2069\u200b\ufeff' or 0xD800 <= ord(c) <= 0xDFFF for c in v) else []
+                    return [repr(v)] if any(ord(c) < 32 and c not in '\t' or c in '\u202e\u2066\u2067\u2068\u2069\u200b\ufeff\ufffe\uffff' or 0xD800 <= ord(c) <= 0xDFFF for c in v) else []
                 if isinstance(v, dict): return [x for y in v.values() for x in badleaves(y, d + 1)]
                 if isinstance(v, (list, tuple)): return [x for y in v for x in badleaves(y, d + 1)]
                 return []

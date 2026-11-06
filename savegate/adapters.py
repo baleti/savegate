@@ -813,6 +813,7 @@ class RvtAdapter:
         bad = self.span_checks(manifest)
         bad += self._delete_reference_checks(manifest)
         bad += self._nonfinite_checks(manifest)
+        bad += self._dangling_ref_checks(manifest)
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()
@@ -920,6 +921,54 @@ class RvtAdapter:
         finally:
             os.unlink(p)
             if p2: os.unlink(p2)
+        return bad
+
+    def _dangling_ref_checks(self, manifest):
+        """c5x-rvtgap 28: an edit that points an ElementId field of a declared element at an id that does not exist (the gate accepted 193 of 198 such edits on the
+        2024 public family) leaves a dangling reference. Refuse NEW dangling ElementId values (sentinels >= 2**62 such as -1/-4 are fine) in declared modified/added
+        elements; dangling values the SOURCE element already held are tolerated."""
+        ids = set()
+        for kind in ('modified', 'added'):
+            for k in manifest.get(kind, ()):
+                if str(k).startswith('el:'):
+                    try: ids.add(int(str(k)[3:]))
+                    except ValueError: pass
+        h = getattr(self, '_buf_hist', [])
+        if not ids or len(h) < 2: return []
+        import tempfile, wledit
+        paths = []
+        def mk(b):
+            fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
+        def refs(r, d=0):
+            out = []
+            if d > 12: return out
+            if isinstance(r, dict):
+                for x in r.values(): out += refs(x, d + 1)
+            elif isinstance(r, (list, tuple)):
+                for x in r: out += refs(x, d + 1)
+            elif type(r).__name__ == 'EID': out.append(int(r))
+            return out
+        bad = []
+        try:
+            ed = mk(h[1]); oids = set(ed.m.ids)
+            sb = getattr(self, '_src_buf', None)
+            sed = mk(sb) if sb is not None else None
+            soids = set(sed.m.ids) if sed is not None else set()
+            for e in sorted(ids):
+                try: r = ed.trace(e)[2]
+                except Exception: continue
+                dang = [v for v in refs(r.get('fields')) if v < 2 ** 62 and v not in oids]
+                if not dang: continue
+                old = []
+                if sed is not None:
+                    try: old = [v for v in refs(sed.trace(e)[2].get('fields')) if v < 2 ** 62 and v not in soids]
+                    except Exception: old = []
+                for v in old:
+                    if v in dang: dang.remove(v)
+                if dang: bad.append(('dangling_reference', 'el:%d refers to element id(s) %s that do not exist in the output' % (e, sorted(set(dang))[:4])))
+        except Exception as ex: bad.append(('dangling_unchecked', 'could not scan the declared elements for dangling references: %s' % ex))
+        finally:
+            for p in paths: os.unlink(p)
         return bad
 
     def _delete_reference_checks(self, manifest):

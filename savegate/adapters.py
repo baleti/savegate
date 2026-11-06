@@ -886,22 +886,40 @@ class RvtAdapter:
         if not ids or len(h) < 2: return []
         import math, tempfile, wledit
         fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(h[1])); os.close(fd)
-        bad = []
+        bad = []; p2 = None
         try:
             ed = wledit.Editor(p)
-            def walk(v, d=0):
-                if d > 12: return False
-                if isinstance(v, float): return math.isnan(v) or math.isinf(v) or abs(v) > 1e100       # c2x-rvtgap: 1e300 is finite but no real model value
-                if isinstance(v, str): return any(ord(c) < 32 and c not in '\t' or c in '\u202e\u2066\u2067\u2068\u2069\u200b\ufeff' or 0xD800 <= ord(c) <= 0xDFFF for c in v)
-                if isinstance(v, dict): return any(walk(x, d + 1) for x in v.values())
-                if isinstance(v, (list, tuple)): return any(walk(x, d + 1) for x in v)
-                return False
+            def badleaves(v, d=0):
+                """bad leaf values (as repr strings) in a field tree"""
+                if d > 12: return []
+                if isinstance(v, float):
+                    return [repr(v)] if (math.isnan(v) or math.isinf(v) or abs(v) > 1e100) else []       # c2x-rvtgap: 1e300 is finite but no real model value
+                if isinstance(v, str):
+                    return [repr(v)] if any(ord(c) < 32 and c not in '\t' or c in '\u202e\u2066\u2067\u2068\u2069\u200b\ufeff' or 0xD800 <= ord(c) <= 0xDFFF for c in v) else []
+                if isinstance(v, dict): return [x for y in v.values() for x in badleaves(y, d + 1)]
+                if isinstance(v, (list, tuple)): return [x for y in v for x in badleaves(y, d + 1)]
+                return []
+            # c5x-rvtgap: only values that are NEW versus the source element count (a source string with a legitimate CRLF stays editable elsewhere)
+            sed = None; p2 = None
+            sb = getattr(self, '_src_buf', None)
+            if sb is not None:
+                fd2, p2 = tempfile.mkstemp(suffix='.rvt'); os.write(fd2, bytes(sb)); os.close(fd2)
+                try: sed = wledit.Editor(p2)
+                except Exception: sed = None
             for e in sorted(ids):
                 try: r = ed.trace(e)[2]
                 except Exception: continue
-                if walk(r.get('fields')): bad.append(('nonfinite_value', 'el:%d holds a NaN or infinite number in the output' % e))
+                new_bad = badleaves(r.get('fields'))
+                if new_bad and sed is not None:
+                    try: old = badleaves(sed.trace(e)[2].get('fields'))
+                    except Exception: old = []
+                    for o in old:
+                        if o in new_bad: new_bad.remove(o)
+                if new_bad: bad.append(('nonfinite_value', 'el:%d holds a NaN, infinite, huge or control-character value in the output' % e))
         except Exception as ex: bad.append(('nonfinite_unchecked', 'could not scan the declared elements for NaN/inf: %s' % ex))
-        finally: os.unlink(p)
+        finally:
+            os.unlink(p)
+            if p2: os.unlink(p2)
         return bad
 
     def _delete_reference_checks(self, manifest):

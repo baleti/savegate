@@ -939,6 +939,9 @@ class RvtAdapter:
         paths = []
         def mk(b):
             fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
+        def nonelem(v):
+            """negative ids (built-in categories, 'none' markers): 64-bit -N is >= 2**62; the 2016-2023 32-bit encoding of the same is 0xFF000000..0xFFFFFFFF"""
+            return v >= 2 ** 62 or 0xFF000000 <= v <= 0xFFFFFFFF
         def refs(r, d=0):
             out = []
             if d > 12: return out
@@ -957,11 +960,11 @@ class RvtAdapter:
             for e in sorted(ids):
                 try: r = ed.trace(e)[2]
                 except Exception: continue
-                dang = [v for v in refs(r.get('fields')) if v < 2 ** 62 and v not in oids]
+                dang = [v for v in refs(r.get('fields')) if not nonelem(v) and v not in oids]
                 if not dang: continue
                 old = []
                 if sed is not None:
-                    try: old = [v for v in refs(sed.trace(e)[2].get('fields')) if v < 2 ** 62 and v not in soids]
+                    try: old = [v for v in refs(sed.trace(e)[2].get('fields')) if not nonelem(v) and v not in soids]
                     except Exception: old = []
                 for v in old:
                     if v in dang: dang.remove(v)

@@ -42,6 +42,35 @@ def run(src_path, ops, dst_path):
             best = max(range(n_), key=lambda k: (struct.unpack_from('<I', et, 6 + 40 * k + 12)[0], struct.unpack_from('<I', et, 6 + 40 * k + 8)[0]))
             ea, eb, _ = struct.unpack_from('<3I', et, 6 + 40 * best + 8); struct.pack_into('<3I', row, 8, ea, eb, eb)
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
+        elif o['op'] == 'move_instance':
+            _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
         else: raise ValueError('unknown writer op %r' % o.get('op'))
     g.commit(dst_path)
     return new_ids
+
+
+def _move_instance(g, tid, d):
+    """MOVE a FamilyInstance: every stored copy of its position moves together: Trf.m_or (and m_instOrigin when it is set) in the record, Outline.m_minmax (bounding box) in the header entry,
+    and the (x, y) pairs of the zone record that equal the old origin. Same-size edits; restamped (record Adler32 via the lab's stamp, zone item via restamp)."""
+    _lab(); from genlib import restamp
+    import rvtgen
+    W = 8; T = g.template(tid); Lc = g.locate(tid); pt = g.pt
+    L = {n: (o, e) for n, o, e, _ in T['log']}; rec = bytearray(T['rec'])
+    ox, oy, oz = struct.unpack_from('<3d', rec, L['Trf.m_or'][0]); struct.pack_into('<3d', rec, L['Trf.m_or'][0], ox + d[0], oy + d[1], oz + d[2])
+    io = L['FamilyInstance.m_instOrigin'][0]; v = struct.unpack_from('<3d', rec, io)
+    if any(v): struct.pack_into('<3d', rec, io, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+    hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}; a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
+    struct.pack_into('<6d', hdr, a, mm[0] + d[0], mm[1] + d[1], mm[2] + d[2], mm[3] + d[0], mm[4] + d[1], mm[5] + d[2])
+    item = bytearray(T['item']); n_pairs = 0
+    for off in range(0, len(item) - 16):
+        if struct.unpack_from('<d', item, off)[0] == ox and struct.unpack_from('<d', item, off + 8)[0] == oy:
+            struct.pack_into('<2d', item, off, ox + d[0], oy + d[1]); n_pairs += 1
+    g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
+    if n_pairs:
+        new_item = restamp(bytes(item), W); bj = g.bj
+        assert len(new_item) == len(T['item'])
+        for (st, ln) in Lc['zone']:
+            if bytes(bj[st + 4:st + 4 + len(T['item'])]) == T['item']:
+                g.edits = getattr(g, 'edits', []) + [(st + 4 + 0.5, lambda st=st, ni=new_item: pt.replace(st + 4, len(ni), ni))]
+                break
+        else: raise ValueError('zone record of element %d not found' % tid)

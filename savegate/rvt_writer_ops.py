@@ -42,25 +42,37 @@ def run(src_path, ops, dst_path):
             best = max(range(n_), key=lambda k: (struct.unpack_from('<I', et, 6 + 40 * k + 12)[0], struct.unpack_from('<I', et, 6 + 40 * k + 8)[0]))
             ea, eb, _ = struct.unpack_from('<3I', et, 6 + 40 * best + 8); struct.pack_into('<3I', row, 8, ea, eb, eb)
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
-        elif o['op'] == 'move_instance':
+        elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
         else: raise ValueError('unknown writer op %r' % o.get('op'))
     g.commit(dst_path)
     return new_ids
 
 
+MOVE_FIELDS = ('Trf.m_or', 'Plane.m_origin', 'GLine.m_origin')
+
+
 def _move_instance(g, tid, d):
-    """MOVE a FamilyInstance: every stored copy of its position moves together: Trf.m_or (and m_instOrigin when it is set) in the record, Outline.m_minmax (bounding box) in the header entry,
-    and the (x, y) pairs of the zone record that equal the old origin. Same-size edits; restamped (record Adler32 via the lab's stamp, zone item via restamp)."""
+    """MOVE an element (instance, wall, grid, level, ...): every stored copy of its position moves together: all Trf.m_or / Plane.m_origin / GLine.m_origin triples (and m_instOrigin when set) in the
+    record, Outline.m_minmax (bounding box) in the header entry when it has one, and the (x, y) pairs of the zone record that equal the first origin. Same-size edits; restamped (record
+    Adler32 via the lab's stamp, zone item via restamp)."""
     _lab(); from genlib import restamp
     import rvtgen
     W = 8; T = g.template(tid); Lc = g.locate(tid); pt = g.pt
-    L = {n: (o, e) for n, o, e, _ in T['log']}; rec = bytearray(T['rec'])
-    ox, oy, oz = struct.unpack_from('<3d', rec, L['Trf.m_or'][0]); struct.pack_into('<3d', rec, L['Trf.m_or'][0], ox + d[0], oy + d[1], oz + d[2])
-    io = L['FamilyInstance.m_instOrigin'][0]; v = struct.unpack_from('<3d', rec, io)
-    if any(v): struct.pack_into('<3d', rec, io, v[0] + d[0], v[1] + d[1], v[2] + d[2])
-    hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}; a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
-    struct.pack_into('<6d', hdr, a, mm[0] + d[0], mm[1] + d[1], mm[2] + d[2], mm[3] + d[0], mm[4] + d[1], mm[5] + d[2])
+    rec = bytearray(T['rec']); first = None
+    for n, o, e, _ in T['log']:
+        if n in MOVE_FIELDS and e - o == 24:
+            v = struct.unpack_from('<3d', rec, o); first = first or v
+            struct.pack_into('<3d', rec, o, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+        elif n == 'FamilyInstance.m_instOrigin':
+            v = struct.unpack_from('<3d', rec, o)
+            if any(v): struct.pack_into('<3d', rec, o, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+    if first is None: raise ValueError('element %d has no movable origin field (%s)' % (tid, ', '.join(MOVE_FIELDS)))
+    ox, oy, oz = first
+    hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}
+    if 'Outline.m_minmax' in hl:
+        a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
+        struct.pack_into('<6d', hdr, a, mm[0] + d[0], mm[1] + d[1], mm[2] + d[2], mm[3] + d[0], mm[4] + d[1], mm[5] + d[2])
     item = bytearray(T['item']); n_pairs = 0
     for off in range(0, len(item) - 16):
         if struct.unpack_from('<d', item, off)[0] == ox and struct.unpack_from('<d', item, off + 8)[0] == oy:

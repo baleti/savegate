@@ -114,7 +114,13 @@ def _produce(doc, new_bytes, manifest, dest, verify):
         with open(long_path(tmp), 'rb') as f: back = f.read()
         if back != new_bytes: raise DiskError('read-back of temp file differs (short write?)')
         T['readback'] = time.time() - t; t = time.time()
-        rep = _verify(doc, back, manifest) if verify else {'verify': 'skipped'}
+        if verify: rep = _verify(doc, back, manifest)
+        else:
+            rep = {'verify': 'skipped'}      # c2x-rvtgap (c7x finding 242): even with verify off the output must still be a structurally valid container, never a truncated file
+            if hasattr(doc.adapter, 'validate'):
+                try: doc.adapter.validate(back)
+                except SaveError: raise
+                except Exception as e: raise VerifyFailed('the output is not a readable file (%s); the original was not touched' % type(e).__name__, dict(error=type(e).__name__))
         T['verify'] = time.time() - t; rep['timing'] = T
     except BaseException:
         try: os.remove(long_path(tmp))

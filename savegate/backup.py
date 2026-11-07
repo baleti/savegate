@@ -141,6 +141,8 @@ def restore(path, which=None):
     if os.path.exists(long_path(path)):
         make_backup(path)
     with open(long_path(use), 'rb') as f: data = f.read()
-    tmp = write_temp(path, data)
+    try: tmp = write_temp(path, data)
+    except OSError as e:      # c5x-rvtread2: a full or unwritable volume surfaced as a raw OSError; the file is untouched (the temp is removed by write_temp)
+        raise DiskError('cannot write the restored copy next to %s: %s; the file was not touched, the backup %s is intact' % (path, e, use)) from e
     commit_temp(tmp, path)
     return use

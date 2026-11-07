@@ -40,6 +40,48 @@ def _shift_leaders(T, rec, dx, dy):
             v = struct.unpack_from('<3d', rec, o); struct.pack_into('<3d', rec, o, v[0] + dx, v[1] + dy, v[2])
 
 
+CASCADE_CLASSES = ('IndependentTag', 'BeamSystemTag', 'SpanDirectionSymbol')      # annotations that Revit deletes together with their host
+
+
+def cascade_plan(src_path, tid):
+    """ids to delete together with element tid: tid plus every referrer whose class is an annotation in CASCADE_CLASSES (closed transitively). Any other referrer (a joist system, a joined wall,
+    a dimension, a hosted instance, ...) makes the cascade refuse: ValueError."""
+    sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+    import collections, rvt_xcache
+    recs = rvt_xcache.get_x_ro(src_path)['recs']; cls = {k[0]: k[1] for k in recs}
+    def refs(v, o, d=0):
+        if d > 12: return
+        if isinstance(v, dict):
+            for q in v.values(): refs(q, o, d + 1)
+        elif isinstance(v, (list, tuple)):
+            for q in v: refs(q, o, d + 1)
+        elif type(v).__name__ == 'EID': o.add(int(v))
+    inb = collections.defaultdict(set)
+    for (eid, c), r in recs.items():
+        o = set(); refs(r.get('fields'), o)
+        for v in o:
+            if v != eid: inb[v].add(eid)
+    todo = [int(tid)]; out = set()
+    while todo:
+        e = todo.pop()
+        if e in out: continue
+        out.add(e)
+        for r in inb.get(e, ()):
+            if r in out: continue
+            if cls.get(r) in CASCADE_CLASSES: todo.append(r)
+            else: raise ValueError('element %d is referenced by element %d (%s): cannot cascade-delete' % (e, r, cls.get(r)))
+    return sorted(out)
+
+
+def deleted_ids(src_path, ops):
+    """every element id the ops delete (plain deletes and cascade plans)"""
+    out = set()
+    for o in ops:
+        if o['op'] == 'delete': out.add(int(o['id']))
+        elif o['op'] == 'delete_cascade': out.update(cascade_plan(src_path, int(o['id'])))
+    return out
+
+
 def run(src_path, ops, dst_path):
     _lab(); import rvtgen
     g = rvtgen.Gen(src_path); new_ids = []
@@ -55,6 +97,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'delete_cascade':
+            for i in cascade_plan(src_path, int(o['id'])): g.delete(i)
         elif o['op'] == 'move_textnote':
             _move_textnote(g, int(o['id']), float(o.get('dx', 0)), float(o.get('dy', 0)))
         elif o['op'] == 'resize_wall':

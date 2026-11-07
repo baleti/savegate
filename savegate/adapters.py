@@ -835,7 +835,11 @@ class RvtAdapter:
         from . import rvt_writer_ops as WO
         ops = manifest.get('writer_ops') or []
         if not ops: return [('writer_op_unsupported', 'empty writer_ops')]
-        dids = {int(o['id']) for o in ops if o.get('op') == 'delete'}
+        import tempfile as _tf
+        fd0, p0 = _tf.mkstemp(suffix='.rvt'); os.write(fd0, bytes(src)); os.close(fd0)
+        try: dids = WO.deleted_ids(p0, ops)
+        except Exception as ex: return [('writer_ops_unplannable', '%s: %s' % (type(ex).__name__, str(ex)[:200]))]
+        finally: os.unlink(p0)
         ddecl = {int(str(k).split(':')[-1]) for k in manifest.get('deleted', ()) if str(k).startswith('el:')}
         if ddecl != dids: return [('writer_ops_mismatch', 'writer_ops delete ids %s differ from the declared deleted elements %s' % (sorted(dids), sorted(ddecl)))]
         adecl = {int(str(k).split(':')[-1]) for k in manifest.get('added', ()) if str(k).startswith('el:')}
@@ -1175,7 +1179,7 @@ class RvtAdapter:
                             for y in v.values(): walk(y, me, depth + 1)
                         elif isinstance(v, (list, tuple)):
                             for y in v: walk(y, me, depth + 1)
-                        elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me: found.setdefault(int(v), []).append(me)
+                        elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me and me not in dels: found.setdefault(int(v), []).append(me)
                     for (eid, c), r in x['recs'].items():
                         seen.add(eid); walk(r.get('fields'), eid)
                     for e in sorted(set(ed.m.ids) - seen):

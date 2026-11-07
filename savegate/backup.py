@@ -105,6 +105,7 @@ def _prune(path, keep, max_bytes=0):
     """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
     sweep_orphan_parts(path)
     bl = list_backups(path)
+    pinned = bl[-1][1] if keep >= 2 and bl else None      # c5x-rvtread2 (HB2): the pristine original is also exempt from the byte cap
     # c2x-rvtgap: the OLDEST backup is the pristine original of the first overwrite; plain 'newest N' pruning deleted it after N+1 saves (25 saves with keep=20 left no copy of the
     # original). It is pinned: the window is the newest keep-1 plus the oldest (keep>=2; with keep<2 behaviour is unchanged).
     if keep >= 2 and len(bl) > keep:
@@ -117,6 +118,7 @@ def _prune(path, keep, max_bytes=0):
             tot += sz
             if tot > max_bytes and i > 0: drop += bl[i:keep]; break
     for name, p, _ in drop:
+        if p == pinned: continue
         try: os.remove(p)
         except OSError: pass
 

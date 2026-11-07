@@ -97,6 +97,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'set_instance_type':
+            _set_instance_type(g, src_path, int(o['id']), int(o['symbol']))
         elif o['op'] == 'delete_cascade':
             for i in cascade_plan(src_path, int(o['id'])): g.delete(i)
         elif o['op'] == 'move_textnote':
@@ -212,3 +214,27 @@ def _move_textnote(g, tid, dx, dy):
     if not o0: raise ValueError('element %d is not a text note' % tid)
     v = struct.unpack_from('<3d', rec, o0[0]); struct.pack_into('<3d', rec, o0[0], v[0] + dx, v[1] + dy, v[2]); _shift_leaders(T, rec, dx, dy)
     g.replace_existing(tid, rec=bytes(rec))
+
+
+def _family_of(src_path, sym):
+    sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+    import rvt_xcache
+    for (e, c), v in rvt_xcache.get_x_ro(src_path)['recs'].items():
+        if e == sym: return c, int(v['fields'].get('m_familyId', -1)) if c == 'FamilySymbol' else None
+    return None, None
+
+
+def _set_instance_type(g, src_path, tid, new_sym):
+    """CHANGE the type (FamilySymbol) of a FamilyInstance to another symbol of the SAME family: the old symbol id is replaced by the new one in FamilyInstance.m_masterSymbolId (record) and in the header
+    entry (ElementParents.m_deletion and m_appearanceParents), same-size edits. The symbols' own header lists (instances of a type) are NOT updated: Revit-VM question."""
+    T = g.template(tid); rec = bytearray(T['rec']); L = {n: (o, e) for n, o, e, _ in T['log']}
+    o = L['FamilyInstance.m_masterSymbolId'][0]; old = struct.unpack_from('<Q', rec, o)[0]
+    c1, f1 = _family_of(src_path, old); c2, f2 = _family_of(src_path, new_sym)
+    if c2 != 'FamilySymbol' or f1 is None or f1 != f2: raise ValueError('symbol %d is not a FamilySymbol of the same family as the current type %d (families %s / %s)' % (new_sym, old, f1, f2))
+    if old == new_sym: raise ValueError('instance %d already has type %d' % (tid, new_sym))
+    ob, nb = struct.pack('<Q', old), struct.pack('<Q', new_sym)
+    struct.pack_into('<Q', rec, o, new_sym)
+    hdr = bytearray(T['hdr']); n_h = 0; k = hdr.find(ob)
+    while k >= 0: hdr[k:k + 8] = nb; n_h += 1; k = hdr.find(ob, k + 8)
+    if not n_h: raise ValueError('old symbol id not found in the header entry (layout differs)')
+    g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))

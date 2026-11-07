@@ -118,7 +118,8 @@ class Lock:
             except OSError: return False
         self._judged = raw
         try:
-            if time.time() - float(d.get('time', 0)) > self.stale_after: return True
+            if 'time' not in d: raise ValueError('lock without a time')      # c5x-rvtread2: used to count as time 0 = ancient and was stolen at once; judge it by mtime like a garbage lock
+            if time.time() - float(d['time']) > self.stale_after: return True
             return d.get('host') == socket.gethostname() and not _pid_alive(int(d.get('pid', 0)))
         except (TypeError, ValueError): return time.time() - os.stat(long_path(self.lp)).st_mtime > 10
 

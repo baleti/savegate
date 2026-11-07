@@ -2,11 +2,15 @@
 els 4141, 5728, 6502). Gate accepts, readback is 5, neighbours still decode, only the partition stream changes."""
 import os, sys, shutil, struct, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
-SRC = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
+D = os.path.expanduser('~/rvt-research/samples-rfa/')
+CASES = [('racbasicsamplefamily-2024.rfa', 4141), ('racbasicsamplefamily-2024.rfa', 5728), ('racbasicsamplefamily-2024.rfa', 6502), ('racbasicsamplefamily-2026.rfa', 4137), ('racbasicsamplefamily-2026.rfa', 5724), ('racbasicsamplefamily-2026.rfa', 6502)]
+SRC = D + CASES[0][0]
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no public sample')
 
-@pytest.mark.parametrize('eid', [4141, 5728, 6502])
-def test_boundary_record_numeric_edit(tmp_path, eid):
+@pytest.mark.parametrize('name,eid', CASES)
+def test_boundary_record_numeric_edit(tmp_path, name, eid):
+    SRC = D + name
+    if not os.path.exists(SRC): pytest.skip('no sample')
     import savegate as sg, wledit, wlrec, cfb
     ed = wledit.Editor(SRC); pn, i, r, log, q = ed.trace(eid)
     o, e = [(l[2], l[3]) for l in log if l[1] == 'GStyle.m_color'][0]; assert e - o == 4

@@ -51,7 +51,7 @@ for i in range(200):
     if cap:
         for j, sz in enumerate(kept):
             tot += sz
-            if tot > cap and j > 0: drop += kept[j:]; kept = kept[:j]; break
+            if tot > cap and j > 0: tail = kept[j:]; drop += tail[:-1] if keep >= 2 else tail; kept = kept[:j] + (tail[-1:] if keep >= 2 else []); break      # c5x-rvtread2: the pinned oldest is exempt from the cap (backup._prune, HB2)
     bk.append({'sizes_newest_first': sizes, 'keep': keep, 'max_bytes': cap, 'kept': len(kept)})
 # cross-check the vector generator against the real _prune on files
 import tempfile, shutil, time

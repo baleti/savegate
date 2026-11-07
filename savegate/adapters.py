@@ -774,6 +774,9 @@ class RvtAdapter:
     SPAN_MAX = 8192        # per declared element (<= 8): the changed window of a partition (prefix/suffix diff) was <= 1066 bytes on 60 real scenes
 
     def span_checks(self, manifest):
+        # c5x-rvtgap: the byte-exact rule (_byte_window_checks) is strictly tighter whenever it applies; the 8 KB-per-element block allowance wrongly refuses elements whose own record is
+        # larger (a wall record is ~20 KB of B-rep topology). When it applied and passed, the block rule has nothing to add.
+        if not self._byte_window_checks(manifest) and getattr(self, '_bw_applied', False): return []
         h = getattr(self, '_blk_hist', [])
         nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted'))
         if not 1 <= nd <= 8 or len(h) < 2 or not h[0] or not h[1]: return []
@@ -959,6 +962,7 @@ class RvtAdapter:
         decodes fields only, the 1 KB block rule allows ~8 KB per element. Byte-exact rule: in the inflated partition of the declared element(s), the differing window
         (everything between the common prefix and the common suffix of source and output) must lie inside the declared elements' own records (field span plus 40 bytes of
         record header in front, 8 behind). Applies to pure in-place edits (no add/delete) of elements that live in one partition stream."""
+        self._bw_applied = False
         if manifest.get('added') or manifest.get('deleted'): return []
         ids = []
         for k in manifest.get('modified', ()):
@@ -988,12 +992,15 @@ class RvtAdapter:
             for p in paths:
                 try: os.unlink(p)
                 except OSError: pass
-        if A == B: return []
+        self._bw_applied = True
+        if A == B: return [('declared_edit_not_applied', '%s: el:%s declared as modified but the partition is byte-identical to the source (the edit did not land)' % (pn, ids))]
         n = min(len(A), len(B)); p = 0
         while p < n and A[p] == B[p]: p += 1
         q = 0
         while q < n - p and A[len(A) - 1 - q] == B[len(B) - 1 - q]: q += 1
         a_end = len(A) - q
+        if abs(len(B) - len(A)) > 16384 * len(ids):      # the cap the old 8 KB block rule imposed in effect (a 16384-char name = 32 KB growth stays refused, 7000 chars = 14 KB passes)
+            return [('growth_too_large', '%s: the partition changed size by %d bytes for %d declared element(s)' % (pn, len(B) - len(A), len(ids)))]
         if p < lo - 40 or a_end > hi + 8:
             return [('changed_outside_declared_record', '%s: bytes %d..%d differ, the declared element(s) occupy %d..%d' % (pn, p, a_end, lo, hi))]
         return []

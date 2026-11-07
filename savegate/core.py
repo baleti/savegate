@@ -79,6 +79,13 @@ def _verify(doc, new_bytes, manifest):
 
 def _verify_inner(doc, new_bytes, manifest):
     ad = doc.adapter
+    if manifest.get('writer_ops') and hasattr(ad, 'verify_writer_ops'):
+        # c5x-rvtgap RVT-EDIT rungs 2/3: the output is claimed to be exactly what the trusted writer produces for the declared operations; the adapter recomputes that from the source
+        bad = ad.verify_writer_ops(doc.buf, new_bytes, manifest)
+        rep = dict(objects_src=0, objects_out=0, unexpected=bad[:50], n_unexpected=len(bad), declared_noop=[], writer_ops=manifest['writer_ops'])
+        if bad: raise VerifyFailed('verify failed: %d differences outside the declared edit (first: %s)' % (len(bad), bad[0]), rep)
+        rep['validate'] = ad.validate(new_bytes) or 'ok'
+        return rep
     a, b = ad.snapshot_pair(doc.buf, new_bytes) if hasattr(ad, 'snapshot_pair') else (ad.snapshot(doc.buf), ad.snapshot(new_bytes))
     mod, add, dele = ad.expand(manifest) if hasattr(ad, 'expand') else (set(manifest.get('modified', ())), set(manifest.get('added', ())), set(manifest.get('deleted', ())))
     se = ad.side_effects(manifest) if hasattr(ad, 'side_effects') else set()

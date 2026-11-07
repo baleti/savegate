@@ -595,11 +595,17 @@ def _plain_damage(n, d):
         if n == 'PartAtom':
             from xml.dom import minidom; minidom.parseString(d)
         elif n == 'RevitPreview4.0':
-            if d.find(b'\x89PNG') < 0 and d[:2] != b'BM': return ['%s: no PNG/BMP signature' % n]
+            st = d.find(b'\x89PNG')
+            if st < 0 and d[:2] != b'BM': return ['%s: no PNG/BMP signature' % n]
+            if st >= 0:      # c5x-rvtread2: a truncated preview keeps its signature; the IEND chunk (+CRC) must be there (195/195 public+local previews have it)
+                i = d.find(b'IEND', st)
+                if i < 0 or d[i + 4:i + 8] != b'\xaeB`\x82': return ['%s: PNG has no IEND chunk (truncated)' % n]
         elif n == 'BasicFileInfo':
             if 'Build'.encode('utf-16le') not in d: return ['%s: no Build key' % n]
+            if not (d.endswith(b'\r\n') or d.endswith(b'\r\x00\n\x00')): return ['%s: does not end with CRLF (truncated)' % n]      # c5x-rvtread2: 170/170 local + 102/102 public end with ASCII or UTF-16 CRLF
         elif n == 'Contents':
             if d[:4] != b'\x62\x19\x22\x05': return ['%s: bad magic' % n]
+            if len(d) < 128: return ['%s: only %d bytes (truncated)' % (n, len(d))]      # c5x-rvtread2: smallest real Contents seen is 195 bytes (public) / 252 (local)
         elif n == 'TransmissionData':
             if len(d) < 4 or 4 + 2 * struct.unpack('<I', d[:4])[0] != len(d): return ['%s: length field does not match' % n]
             from xml.dom import minidom; minidom.parseString(d[4:].decode('utf-16le').rstrip('\0').encode())
@@ -688,6 +694,10 @@ class RvtAdapter:
             if len(e.data) != e.size: errs.append('%s: %d bytes readable of %d declared (FAT chain damaged/truncated)' % (n, len(e.data), e.size)); continue   # c4x-rvtgap
             if n in ('PartAtom', 'RevitPreview4.0', 'BasicFileInfo', 'Contents', 'TransmissionData'):   # c7x-rvtread2: plain streams, structure rules (0 false positives on 22 public samples)
                 errs.extend(_plain_damage(n, e.data)); continue
+            if n == 'Formats/Latest':      # c5x-rvtread2: the class table must hold a gzip member; an emptied or zeroed stream has valid (all-zero) ECC pages and passed (272/272 real files have one)
+                try: ok = rvtw.Stream(e.data).payload.find(rvtw.GZ) >= 0
+                except Exception: ok = False
+                if not ok: errs.append('Formats/Latest: no gzip member (emptied or zeroed)'); continue
             if n in rvtw.PLAIN or n.startswith('\x05'): continue      # OLE property-set streams are plain
             d = e.data
             if d[:5] == b'<?xml': continue      # c7x-rvtread2: raw-gzip-looking Formats/Latest IS page-ECC protected, do not skip it
@@ -813,6 +823,36 @@ class RvtAdapter:
                         f = dict(fields); co = f.pop('__clone_of__', None); rvt_verify.verify_new(a, b, i, co, f)
                     else: rvt_verify.verify_declared(a, b, i, fields, only=only)
                 except Exception as e: bad.append(('declared_element_mismatch', '%s: %s' % (type(e).__name__, str(e)[:200])))
+        return bad
+
+    def verify_writer_ops(self, src, out, manifest):
+        """c5x-rvtgap RVT-EDIT rung 2: manifest['writer_ops'] = [{'op': 'delete', 'id': N}, ...]. The complete delete (header entry, record, zone records, ElemTable row, counts) shifts the rest of
+        the partition and re-chunks its gzip members, so the local-change rules cannot judge it. Instead the trusted writer (rvtgen.Gen, deterministic, Revit-validated in the write lab) is run
+        on the SOURCE for the same operations and the output must equal its result byte for byte; a flip or damage anywhere after the writer fails. The deleted ids must also have no referrer."""
+        import tempfile
+        wl = os.environ.get('SAVEGATE_RVT_WRITELAB') or os.path.expanduser('~/rvt-research/write-lab')
+        if wl not in sys.path: sys.path.insert(0, wl)
+        ops = manifest.get('writer_ops') or []
+        if not ops or any(o.get('op') != 'delete' for o in ops): return [('writer_op_unsupported', 'only complete delete is verifiable this way, got %s' % [o.get('op') for o in ops])]
+        ids = [int(o['id']) for o in ops]
+        declared = {int(str(k).split(':')[-1]) for k in manifest.get('deleted', ()) if str(k).startswith('el:')}
+        if declared != set(ids): return [('writer_ops_mismatch', 'writer_ops delete ids %s differ from the declared deleted elements %s' % (sorted(ids), sorted(declared)))]
+        self._src_buf = bytes(src)
+        bad = list(self._delete_reference_checks({'deleted': ['el:%d' % i for i in ids]}))
+        paths = []
+        try:
+            import rvtgen
+            fd, p1 = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(src)); os.close(fd); paths.append(p1)
+            fd, p2 = tempfile.mkstemp(suffix='.rvt'); os.close(fd); paths.append(p2)
+            g = rvtgen.Gen(p1)
+            for i in ids: g.delete(i)
+            g.commit(p2)
+            if open(p2, 'rb').read() != bytes(out): bad.append(('writer_output_mismatch', 'the output is not what the trusted writer produces for delete %s' % sorted(ids)))
+        except Exception as ex: bad.append(('writer_unchecked', 'could not recompute the writer result: %s: %s' % (type(ex).__name__, str(ex)[:150])))
+        finally:
+            for p in paths:
+                try: os.unlink(p)
+                except OSError: pass
         return bad
 
     def filter_changed(self, bad, a, b, manifest):

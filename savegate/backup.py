@@ -144,5 +144,9 @@ def restore(path, which=None):
     try: tmp = write_temp(path, data)
     except OSError as e:      # c5x-rvtread2: a full or unwritable volume surfaced as a raw OSError; the file is untouched (the temp is removed by write_temp)
         raise DiskError('cannot write the restored copy next to %s: %s; the file was not touched, the backup %s is intact' % (path, e, use)) from e
-    commit_temp(tmp, path)
+    try: commit_temp(tmp, path)
+    except OSError as e:      # c5x-rvtread2: a failing replace left the temp file behind and surfaced as a raw OSError
+        try: os.remove(long_path(tmp))
+        except OSError: pass
+        raise DiskError('cannot replace %s with the restored copy: %s; the file was not touched, the backup %s is intact' % (path, e, use)) from e
     return use

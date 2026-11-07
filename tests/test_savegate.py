@@ -665,7 +665,8 @@ def test_backup_size_cap_and_damaged_backup_not_restored(tmp_path, monkeypatch):
     for i in range(6):
         p.write_bytes(bytes([i]) * 1000); B.make_backup(str(p), keep=20, max_bytes=2500)
     bl = B.list_backups(str(p))
-    assert 1 <= len(bl) <= 2 and sum(b[2] for b in bl) <= 2500          # cap: newest kept, oldest dropped
+    assert 2 <= len(bl) <= 3 and sum(b[2] for b in bl[:-1]) <= 2500      # cap: newest kept, middle ones dropped; the pristine original (oldest) is pinned and exempt (HB2, c5x-rvtread2)
+    assert open(bl[-1][1], 'rb').read() == bytes([0]) * 1000
     assert open(bl[0][1], 'rb').read() == bytes([5]) * 1000
     assert B.verify_backup(bl[0][1])
     with open(bl[0][1], 'r+b') as f: f.seek(10); f.write(b'X')           # bit rot in the newest backup

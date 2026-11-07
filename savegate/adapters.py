@@ -826,28 +826,27 @@ class RvtAdapter:
         return bad
 
     def verify_writer_ops(self, src, out, manifest):
-        """c5x-rvtgap RVT-EDIT rung 2: manifest['writer_ops'] = [{'op': 'delete', 'id': N}, ...]. The complete delete (header entry, record, zone records, ElemTable row, counts) shifts the rest of
-        the partition and re-chunks its gzip members, so the local-change rules cannot judge it. Instead the trusted writer (rvtgen.Gen, deterministic, Revit-validated in the write lab) is run
-        on the SOURCE for the same operations and the output must equal its result byte for byte; a flip or damage anywhere after the writer fails. The deleted ids must also have no referrer."""
+        """c5x-rvtgap RVT-EDIT rungs 2/3: manifest['writer_ops'] = [{'op': 'delete', 'id': N}, {'op': 'add_textnote', 'template': TID, 'x':..,'y':..,'text':..}, ...] (see rvt_writer_ops).
+        A complete delete or an add shifts the rest of the partition and re-chunks its gzip members, so the local-change rules cannot judge it. Instead the trusted writer (rvtgen.Gen,
+        deterministic, Revit-validated in the write lab) is run on the SOURCE for the same operations and the output must equal its result byte for byte; a flip or damage anywhere
+        after the writer fails. Deleted ids must have no referrer; declared deleted/added elements must equal what the operations delete/add."""
         import tempfile
-        wl = os.environ.get('SAVEGATE_RVT_WRITELAB') or os.path.expanduser('~/rvt-research/write-lab')
-        if wl not in sys.path: sys.path.insert(0, wl)
+        from . import rvt_writer_ops as WO
         ops = manifest.get('writer_ops') or []
-        if not ops or any(o.get('op') != 'delete' for o in ops): return [('writer_op_unsupported', 'only complete delete is verifiable this way, got %s' % [o.get('op') for o in ops])]
-        ids = [int(o['id']) for o in ops]
-        declared = {int(str(k).split(':')[-1]) for k in manifest.get('deleted', ()) if str(k).startswith('el:')}
-        if declared != set(ids): return [('writer_ops_mismatch', 'writer_ops delete ids %s differ from the declared deleted elements %s' % (sorted(ids), sorted(declared)))]
-        self._src_buf = bytes(src)
-        bad = list(self._delete_reference_checks({'deleted': ['el:%d' % i for i in ids]}))
+        if not ops: return [('writer_op_unsupported', 'empty writer_ops')]
+        dids = {int(o['id']) for o in ops if o.get('op') == 'delete'}
+        ddecl = {int(str(k).split(':')[-1]) for k in manifest.get('deleted', ()) if str(k).startswith('el:')}
+        if ddecl != dids: return [('writer_ops_mismatch', 'writer_ops delete ids %s differ from the declared deleted elements %s' % (sorted(dids), sorted(ddecl)))]
+        adecl = {int(str(k).split(':')[-1]) for k in manifest.get('added', ()) if str(k).startswith('el:')}
+        self._src_buf = bytes(src); bad = []
+        if dids: bad += list(self._delete_reference_checks({'deleted': ['el:%d' % i for i in sorted(dids)]}))
         paths = []
         try:
-            import rvtgen
             fd, p1 = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(src)); os.close(fd); paths.append(p1)
             fd, p2 = tempfile.mkstemp(suffix='.rvt'); os.close(fd); paths.append(p2)
-            g = rvtgen.Gen(p1)
-            for i in ids: g.delete(i)
-            g.commit(p2)
-            if open(p2, 'rb').read() != bytes(out): bad.append(('writer_output_mismatch', 'the output is not what the trusted writer produces for delete %s' % sorted(ids)))
+            new_ids = WO.run(p1, ops, p2)
+            if set(new_ids) != adecl: bad.append(('writer_ops_mismatch', 'the operations add %s but the declaration says %s' % (sorted(new_ids), sorted(adecl))))
+            if open(p2, 'rb').read() != bytes(out): bad.append(('writer_output_mismatch', 'the output is not what the trusted writer produces for %s' % [o.get('op') for o in ops]))
         except Exception as ex: bad.append(('writer_unchecked', 'could not recompute the writer result: %s: %s' % (type(ex).__name__, str(ex)[:150])))
         finally:
             for p in paths:

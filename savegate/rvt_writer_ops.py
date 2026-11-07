@@ -17,6 +17,7 @@ def make_textnote_rtf(g, T, nid, x, y, text, z=0.0):
     f0, f1 = L['TextElement.m_arrTextFragments']
     if not (struct.unpack_from('<I', rec, f0)[0] == 0 and f1 - f0 == 4): raise ValueError('template text note has text fragments (only rich-text-only notes are supported)')
     rt0, rt1 = L['RtfData.m_arrRtfStream']; o0 = L['TextElement.m_orig'][0]
+    ox, oy, oz = struct.unpack_from('<3d', rec, o0); _shift_leaders(T, rec, x - ox, y - oy)
     rec[4:12] = idb; rec[L['Element.m_id'][0]:L['Element.m_id'][1]] = idb; struct.pack_into('<3d', rec, o0, x, y, z)
     rtf = bytes(rec[rt0 + 4:rt1]); i = rtf.index(b'\\fs') + 3
     while rtf[i:i + 1].isdigit(): i += 1
@@ -27,6 +28,16 @@ def make_textnote_rtf(g, T, nid, x, y, text, z=0.0):
     item = bytearray(T['item']); rep(item, T['tid'].to_bytes(W, 'little'), idb)
     rec = bytearray(g.stamp(bytes(rec))); setphase(hdr); setphase(rec); rec = g.stamp(bytes(rec)); setphase(item); item = restamp(bytes(item), W)
     return bytes(hdr), bytes(rec), bytes(item)
+
+
+LEADER_FIELDS = ('Leader.m_end', 'Leader.m_elbow', 'Leader.m_anchor')
+
+
+def _shift_leaders(T, rec, dx, dy):
+    """leader points of a text note are stored in the same view coordinates as TextElement.m_orig (absolute): they move with the note"""
+    for n, o, e, _ in T['log']:
+        if n in LEADER_FIELDS and e - o == 24:
+            v = struct.unpack_from('<3d', rec, o); struct.pack_into('<3d', rec, o, v[0] + dx, v[1] + dy, v[2])
 
 
 def run(src_path, ops, dst_path):
@@ -44,6 +55,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'move_textnote':
+            _move_textnote(g, int(o['id']), float(o.get('dx', 0)), float(o.get('dy', 0)))
         elif o['op'] == 'resize_wall':
             _resize_wall(g, int(o['id']), o.get('height'), o.get('length_delta'))
         elif o['op'] == 'rotate_instance':
@@ -146,3 +159,12 @@ def _resize_wall(g, tid, height=None, length_delta=None):
         else: mm[ax] -= dl
     struct.pack_into('<6d', hdr, a, *mm)
     g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
+
+
+def _move_textnote(g, tid, dx, dy):
+    """MOVE a TextNote in its view (feet, view coordinates): TextElement.m_orig and every leader point (end, elbow, anchor) move together; leader extension points are note-relative and stay.
+    Annotations carry no header bounding box and no zone coordinates."""
+    T = g.template(tid); rec = bytearray(T['rec']); o0 = [o for n, o, e, _ in T['log'] if n == 'TextElement.m_orig']
+    if not o0: raise ValueError('element %d is not a text note' % tid)
+    v = struct.unpack_from('<3d', rec, o0[0]); struct.pack_into('<3d', rec, o0[0], v[0] + dx, v[1] + dy, v[2]); _shift_leaders(T, rec, dx, dy)
+    g.replace_existing(tid, rec=bytes(rec))

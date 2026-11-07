@@ -812,6 +812,24 @@ class RvtAdapter:
                 except Exception as e: bad.append(('declared_element_mismatch', '%s: %s' % (type(e).__name__, str(e)[:200])))
         return bad
 
+    def filter_changed(self, bad, a, b, manifest):
+        """c5x-rvtgap RVT-EDIT rung 1: moving a Level (or any element others depend on) changes the DERIVED view (geometry, derived parameters) of its dependents
+        although their stored records are byte-identical. With manifest['derived_ok'] = True an undeclared element may differ in the derived view only: its raw
+        record-field hash (class + decoded fields, the '|R' part) must be equal, and the byte-exact window rule (_byte_window_checks) must pass, i.e. every differing byte lies inside a
+        declared element's own record. Without the flag nothing changes."""
+        if not manifest.get('derived_ok') or not any(k == 'changed' for k, _ in bad): return bad
+        if self._byte_window_checks(manifest): return bad
+        def part(v, tag):
+            i = v.find('|' + tag)
+            if i < 0: return ''
+            j = v.find('|', i + 2)
+            return v[i:j if j > 0 else len(v)]
+        keep = []
+        for kind, k in bad:
+            if kind == 'changed' and k in a and k in b and part(a[k], 'R') == part(b[k], 'R') and part(a[k], 'R'): continue
+            keep.append((kind, k))
+        return keep
+
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""

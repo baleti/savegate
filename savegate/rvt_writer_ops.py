@@ -44,6 +44,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'rotate_instance':
+            _rotate_instance(g, int(o['id']), float(o['deg']))
         else: raise ValueError('unknown writer op %r' % o.get('op'))
     g.commit(dst_path)
     return new_ids
@@ -86,3 +88,25 @@ def _move_instance(g, tid, d):
                 g.edits = getattr(g, 'edits', []) + [(st + 4 + 0.5, lambda st=st, ni=new_item: pt.replace(st + 4, len(ni), ni))]
                 break
         else: raise ValueError('zone record of element %d not found' % tid)
+
+
+def _rotate_instance(g, tid, deg):
+    """ROTATE a FamilyInstance about its own origin (Trf.m_or) around the Z axis by deg degrees (counter-clockwise, applied to the world-side of the stored 3x3: new = Rz * M column by column):
+    Trf.m_3x3 and FamilyInstance.m_RefDir in the record, Outline.m_minmax in the header entry becomes the box of the four rotated corners (z unchanged). The origin, m_zAxis and the zone
+    record do not change. Sign/transposition convention of the stored matrix is verified only by the Revit VM."""
+    import math
+    W = 8; T = g.template(tid); rec = bytearray(T['rec']); L = {n: (o, e) for n, o, e, _ in T['log']}
+    c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    def rz(v): return (c * v[0] - s_ * v[1], s_ * v[0] + c * v[1], v[2])
+    ox, oy, oz = struct.unpack_from('<3d', rec, L['Trf.m_or'][0])
+    o3 = L['Trf.m_3x3'][0]; M = struct.unpack_from('<9d', rec, o3)
+    cols = [rz((M[0], M[3], M[6])), rz((M[1], M[4], M[7])), rz((M[2], M[5], M[8]))]
+    struct.pack_into('<9d', rec, o3, cols[0][0], cols[1][0], cols[2][0], cols[0][1], cols[1][1], cols[2][1], cols[0][2], cols[1][2], cols[2][2])
+    r0 = L['FamilyInstance.m_RefDir'][0]; struct.pack_into('<3d', rec, r0, *rz(struct.unpack_from('<3d', rec, r0)))
+    hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}
+    if 'Outline.m_minmax' in hl:
+        a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
+        pts = [rz((x - ox, y - oy, 0.0)) for x in (mm[0], mm[3]) for y in (mm[1], mm[4])]
+        xs = [ox + p[0] for p in pts]; ys = [oy + p[1] for p in pts]
+        struct.pack_into('<6d', hdr, a, min(xs), min(ys), mm[2], max(xs), max(ys), mm[5])
+    g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))

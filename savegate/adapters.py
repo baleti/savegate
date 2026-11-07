@@ -1105,23 +1105,44 @@ class RvtAdapter:
         buf = getattr(self, '_src_buf', None)
         try:
             if buf is None: raise ValueError('no source buffer')
-            import tempfile, wledit
+            import tempfile, wledit, struct
             fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(buf)); os.close(fd)
             try:
-                ed = wledit.Editor(p); ids = sorted(ed.m.ids)
-                if len(ids) > self.MAX_IDS_FOR_REF_SCAN: raise ValueError('%d elements, reference scan limit %d' % (len(ids), self.MAX_IDS_FOR_REF_SCAN))
-                found = {}
-                def walk(v, me, depth=0):
-                    if depth > 12: return
-                    if isinstance(v, dict):
-                        for x in v.values(): walk(x, me, depth + 1)
-                    elif isinstance(v, (list, tuple)):
-                        for x in v: walk(x, me, depth + 1)
-                    elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me: found.setdefault(int(v), []).append(me)
-                for e in ids:
-                    try: r = ed.trace(e)[2]
-                    except Exception: continue
-                    walk(r.get('fields'), e)
+                ed = wledit.Editor(p); found = {}
+                if os.environ.get('SAVEGATE_RVT_SLOW_REFS'):
+                    ids = sorted(ed.m.ids)
+                    if len(ids) > self.MAX_IDS_FOR_REF_SCAN: raise ValueError('%d elements, reference scan limit %d' % (len(ids), self.MAX_IDS_FOR_REF_SCAN))
+                    def walk(v, me, depth=0):
+                        if depth > 12: return
+                        if isinstance(v, dict):
+                            for x in v.values(): walk(x, me, depth + 1)
+                        elif isinstance(v, (list, tuple)):
+                            for x in v: walk(x, me, depth + 1)
+                        elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me: found.setdefault(int(v), []).append(me)
+                    for e in ids:
+                        try: r = ed.trace(e)[2]
+                        except Exception: continue
+                        walk(r.get('fields'), e)
+                else:
+                    # c5x-rvtgap: tracing every element took ~1 hour on a 28 MB project. The reader's record cache (decoded fields of every record, built once for the element
+                    # view anyway) gives the same inbound references in ~3 s (checked against the full trace on the 2024 Snowdon Structural sample: identical answers for 5 elements).
+                    # Elements the cache did not decode (a handful) are traced one by one so that no possible referrer is skipped.
+                    import rvt_xcache
+                    x = rvt_xcache.get_x_ro(p); seen = set()
+                    def walk(v, me, depth=0):
+                        if depth > 12: return
+                        if isinstance(v, dict):
+                            for y in v.values(): walk(y, me, depth + 1)
+                        elif isinstance(v, (list, tuple)):
+                            for y in v: walk(y, me, depth + 1)
+                        elif type(v).__name__ == 'EID' and int(v) in dels and int(v) != me: found.setdefault(int(v), []).append(me)
+                    for (eid, c), r in x['recs'].items():
+                        seen.add(eid); walk(r.get('fields'), eid)
+                    for e in sorted(set(ed.m.ids) - seen):
+                        try: tr = ed.trace(e)
+                        except IndexError: continue      # an ElemTable row without a framed record (the source itself has such unresolved ids): it holds no references
+                        except Exception as ex2: raise ValueError('element %s could not be decoded: %s' % (e, ex2))
+                        walk(tr[2].get('fields'), e)
             finally: os.unlink(p)
         except Exception as ex:
             return [('delete_references_unchecked', 'cannot prove that no element references the deleted id(s): %s' % ex)]

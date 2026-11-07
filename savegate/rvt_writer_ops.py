@@ -44,6 +44,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'resize_wall':
+            _resize_wall(g, int(o['id']), o.get('height'), o.get('length_delta'))
         elif o['op'] == 'rotate_instance':
             _rotate_instance(g, int(o['id']), float(o['deg']))
         else: raise ValueError('unknown writer op %r' % o.get('op'))
@@ -109,4 +111,38 @@ def _rotate_instance(g, tid, deg):
         pts = [rz((x - ox, y - oy, 0.0)) for x in (mm[0], mm[3]) for y in (mm[1], mm[4])]
         xs = [ox + p[0] for p in pts]; ys = [oy + p[1] for p in pts]
         struct.pack_into('<6d', hdr, a, min(xs), min(ys), mm[2], max(xs), max(ys), mm[5])
+    g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
+
+
+WALL_USER_HEIGHT = -1001105          # BuiltInParameter.WALL_USER_HEIGHT_PARAM (Unconnected Height)
+
+
+def _resize_wall(g, tid, height=None, length_delta=None):
+    """RESIZE a straight wall (axis-aligned: its location line runs along x or y). height = new unconnected height (ft): the parameter value -1001105, the top (v1) of the Envelope.m_corners of
+    every face plane, and the z top of the header bounding box (zmin + height) change together. length_delta = change of the end parameter (ft, end side): GCurve.m_endParams[1], u1 of every
+    envelope and the header bounding box along the wall direction. Joins, hosted openings and other dependents are NOT touched."""
+    W = 8; T = g.template(tid); rec = bytearray(T['rec']); log = T['log']
+    env = [o for n, o, e, _ in log if n == 'Envelope.m_corners']
+    if not env: raise ValueError('element %d has no face envelopes (not a wall?)' % tid)
+    ep = [o for n, o, e, _ in log if n == 'GCurve.m_endParams']; gl = [o for n, o, e, _ in log if n == 'GLine.m_dirVec']
+    d = struct.unpack_from('<3d', rec, gl[0]) if gl else (1.0, 0.0, 0.0)
+    if abs(d[2]) > 1e-9 or (abs(abs(d[0]) - 1) > 1e-9 and abs(abs(d[1]) - 1) > 1e-9): raise ValueError('only walls along x or y are supported (direction %s)' % (d,))
+    hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}; a = hl['Outline.m_minmax'][0]; mm = list(struct.unpack_from('<6d', hdr, a))
+    if height is not None:
+        h = float(height); last = None; done = 0
+        for n, o, e, _ in log:
+            if n == 'ParamValueDouble.m_paramId': last = struct.unpack_from('<q', rec, o)[0]
+            elif n == 'ParamValueDouble.m_value' and last == WALL_USER_HEIGHT: struct.pack_into('<d', rec, o, h); done += 1
+        if done != 1: raise ValueError('wall height parameter %d found %d times' % (WALL_USER_HEIGHT, done))
+        for o in env: c = list(struct.unpack_from('<4d', rec, o)); c[3] = h; struct.pack_into('<4d', rec, o, *c)
+        mm[5] = mm[2] + h
+    if length_delta is not None:
+        dl = float(length_delta)
+        if not ep: raise ValueError('wall has no GCurve.m_endParams')
+        p0, p1 = struct.unpack_from('<2d', rec, ep[0]); struct.pack_into('<2d', rec, ep[0], p0, p1 + dl)
+        for o in env: c = list(struct.unpack_from('<4d', rec, o)); c[2] += dl; struct.pack_into('<4d', rec, o, *c)
+        ax = 0 if abs(d[0]) > 0.5 else 1; sign = d[ax]
+        if sign > 0: mm[3 + ax] += dl
+        else: mm[ax] -= dl
+    struct.pack_into('<6d', hdr, a, *mm)
     g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))

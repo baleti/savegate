@@ -97,6 +97,8 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
+        elif o['op'] == 'add_instance':
+            new_ids.append(_add_instance(g, int(o['template']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0)))))
         elif o['op'] == 'set_instance_type':
             _set_instance_type(g, src_path, int(o['id']), int(o['symbol']))
         elif o['op'] == 'delete_cascade':
@@ -238,3 +240,64 @@ def _set_instance_type(g, src_path, tid, new_sym):
     while k >= 0: hdr[k:k + 8] = nb; n_h += 1; k = hdr.find(ob, k + 8)
     if not n_h: raise ValueError('old symbol id not found in the header entry (layout differs)')
     g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
+    def latest(raw, tid=tid, old=old, new_sym=new_sym):
+        """Global/Latest keeps per-type instance lists [count u32][ids u64..] sorted, STARTING with the symbol id: move tid from old's list(s) to new_sym's list(s)"""
+        def lists(sym):
+            out = []; pat = struct.pack('<Q', sym); k = -1
+            while True:
+                k = raw.find(pat, k + 1)
+                if k < 0: break
+                if k < 4: continue
+                n = struct.unpack_from('<I', raw, k - 4)[0]
+                if not 1 <= n < 20000 or k + 8 * n > len(raw): continue
+                ids = list(struct.unpack_from('<%dQ' % n, raw, k))
+                if ids[0] != sym or ids != sorted(ids) or any(i >= 1 << 40 for i in ids): continue
+                out.append((k - 4, n, ids))
+            return out
+        lo = [l for l in lists(old) if tid in l[2]]; ln = lists(new_sym)
+        if not lo: return raw          # the instance is in no per-type list of Global/Latest (Snowdon structural instances are not): nothing to move
+        if len(lo) != len(ln): raise ValueError('cannot patch the Global/Latest instance lists: %d list(s) of the old type contain the instance, %d list(s) start with the new type' % (len(lo), len(ln)))
+        ops = [(pos, 4 + 8 * n, struct.pack('<I', n - 1) + b''.join(struct.pack('<Q', i) for i in ids if i != tid)) for pos, n, ids in lo]
+        ops += [(pos, 4 + 8 * n, struct.pack('<I', n + 1) + b''.join(struct.pack('<Q', i) for i in sorted(ids + [tid]))) for pos, n, ids in ln]
+        out = bytearray(raw)
+        for pos, dl, ins in sorted(ops, key=lambda o: -o[0]): out[pos:pos + dl] = ins
+        return bytes(out)
+    import rvtw
+    _s = rvtw.Stream(g.e.m.c.streams()['Global/Latest'].data); _P = _s.payload; _raw, _ = rvtw.read_member(_P, _P.find(rvtw.GZ)); _new = latest(bytes(_raw))
+    if _new != bytes(_raw): g.e.global_edit('Global/Latest', lambda raw: _new)      # only when a list really changes: an unneeded rewrite would recompress the stream for nothing
+
+
+def _add_instance(g, tid, d):
+    """ADD a FamilyInstance: clone of the existing instance tid (same type, level, parameters) with a new id, placed at the template position + d (feet): record (id, Element.m_id, Trf.m_or and
+    m_instOrigin when set), header entry (own id in its lists, Outline.m_minmax shifted), zone record (id, (x,y) pairs shifted), ElemTable row, and the Global/Latest id lists that start with the template id
+    or with its type symbol id (the symbol's instance list). Returns the new id."""
+    _lab(); import genlib, genlib2
+    from genlib import restamp, rep
+    W = 8; T = g.template(tid); nid = g.nextid; g.nextid += 1; idb = nid.to_bytes(W, 'little')
+    rec = bytearray(T['rec']); L = {n: (o, e) for n, o, e, _ in T['log']}
+    rec[4:12] = idb; rec[L['Element.m_id'][0]:L['Element.m_id'][1]] = idb
+    ox, oy, oz = struct.unpack_from('<3d', rec, L['Trf.m_or'][0]); struct.pack_into('<3d', rec, L['Trf.m_or'][0], ox + d[0], oy + d[1], oz + d[2])
+    io = L['FamilyInstance.m_instOrigin'][0]; v = struct.unpack_from('<3d', rec, io)
+    if any(v): struct.pack_into('<3d', rec, io, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+    sym = struct.unpack_from('<Q', rec, L['FamilyInstance.m_masterSymbolId'][0])[0]
+    hdr, hl = genlib2.hdr_ids(T, nid, W)
+    if 'Outline.m_minmax' in hl:
+        a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
+        struct.pack_into('<6d', hdr, a, mm[0] + d[0], mm[1] + d[1], mm[2] + d[2], mm[3] + d[0], mm[4] + d[1], mm[5] + d[2])
+    item = bytearray(T['item']); rep(item, T['tid'].to_bytes(W, 'little'), idb)
+    for off in range(0, len(item) - 16):
+        if struct.unpack_from('<d', item, off)[0] == ox and struct.unpack_from('<d', item, off + 8)[0] == oy: struct.pack_into('<2d', item, off, ox + d[0], oy + d[1])
+    rec = bytearray(g.stamp(bytes(rec))); genlib.setphase(hdr); genlib.setphase(rec); rec = g.stamp(bytes(rec)); genlib.setphase(item); item = restamp(bytes(item), W)
+    et = g._et(); n_ = struct.unpack_from('<I', et, 2)[0]
+    best = max(range(n_), key=lambda k: (struct.unpack_from('<I', et, 6 + 40 * k + 12)[0], struct.unpack_from('<I', et, 6 + 40 * k + 8)[0]))
+    ea, eb, _ = struct.unpack_from('<3I', et, 6 + 40 * best + 8)
+    g.new.append((bytes(hdr), bytes(rec), bytes(item), nid)); g.rows.append(genlib._row(g, T, nid, 8, (ea, eb, eb)))
+    prev = list(getattr(g, 'latest_edits', []))
+    def comp(raw, tid=tid, nid=nid, sym=sym):
+        ops = genlib2.registry_ops(raw, tid, [nid]) + genlib2.registry_ops(raw, sym, [nid], must=tid)
+        out = bytearray(raw)
+        for pos, dl, ins in sorted(ops, key=lambda o: -o[0]): out[pos:pos + dl] = ins
+        return bytes(out)
+    g.latest_edits = prev + [('Latest', comp)]
+    g.itag = T['item'][16:18]
+    return nid

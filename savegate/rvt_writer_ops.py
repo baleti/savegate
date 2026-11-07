@@ -97,7 +97,7 @@ def run(src_path, ops, dst_path):
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
-        elif o['op'] == 'add_instance':
+        elif o['op'] in ('add_instance', 'add_element'):
             new_ids.append(_add_instance(g, int(o['template']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0)))))
         elif o['op'] == 'set_instance_type':
             _set_instance_type(g, src_path, int(o['id']), int(o['symbol']))
@@ -268,7 +268,7 @@ def _set_instance_type(g, src_path, tid, new_sym):
 
 
 def _add_instance(g, tid, d):
-    """ADD a FamilyInstance: clone of the existing instance tid (same type, level, parameters) with a new id, placed at the template position + d (feet): record (id, Element.m_id, Trf.m_or and
+    """ADD an element (FamilyInstance, wall, ...): clone of the existing instance tid (same type, level, parameters) with a new id, placed at the template position + d (feet): record (id, Element.m_id, Trf.m_or and
     m_instOrigin when set), header entry (own id in its lists, Outline.m_minmax shifted), zone record (id, (x,y) pairs shifted), ElemTable row, and the Global/Latest id lists that start with the template id
     or with its type symbol id (the symbol's instance list). Returns the new id."""
     _lab(); import genlib, genlib2
@@ -276,10 +276,16 @@ def _add_instance(g, tid, d):
     W = 8; T = g.template(tid); nid = g.nextid; g.nextid += 1; idb = nid.to_bytes(W, 'little')
     rec = bytearray(T['rec']); L = {n: (o, e) for n, o, e, _ in T['log']}
     rec[4:12] = idb; rec[L['Element.m_id'][0]:L['Element.m_id'][1]] = idb
-    ox, oy, oz = struct.unpack_from('<3d', rec, L['Trf.m_or'][0]); struct.pack_into('<3d', rec, L['Trf.m_or'][0], ox + d[0], oy + d[1], oz + d[2])
-    io = L['FamilyInstance.m_instOrigin'][0]; v = struct.unpack_from('<3d', rec, io)
-    if any(v): struct.pack_into('<3d', rec, io, v[0] + d[0], v[1] + d[1], v[2] + d[2])
-    sym = struct.unpack_from('<Q', rec, L['FamilyInstance.m_masterSymbolId'][0])[0]
+    first = None
+    for n, o, e, _ in T['log']:
+        if n in MOVE_FIELDS and e - o == 24:
+            v = struct.unpack_from('<3d', rec, o); first = first or v; struct.pack_into('<3d', rec, o, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+        elif n == 'FamilyInstance.m_instOrigin':
+            v = struct.unpack_from('<3d', rec, o)
+            if any(v): struct.pack_into('<3d', rec, o, v[0] + d[0], v[1] + d[1], v[2] + d[2])
+    if first is None: raise ValueError('element %d has no movable origin field (%s)' % (tid, ', '.join(MOVE_FIELDS)))
+    ox, oy, oz = first
+    sym = struct.unpack_from('<Q', rec, L['FamilyInstance.m_masterSymbolId'][0])[0] if 'FamilyInstance.m_masterSymbolId' in L else None
     hdr, hl = genlib2.hdr_ids(T, nid, W)
     if 'Outline.m_minmax' in hl:
         a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
@@ -294,7 +300,7 @@ def _add_instance(g, tid, d):
     g.new.append((bytes(hdr), bytes(rec), bytes(item), nid)); g.rows.append(genlib._row(g, T, nid, 8, (ea, eb, eb)))
     prev = list(getattr(g, 'latest_edits', []))
     def comp(raw, tid=tid, nid=nid, sym=sym):
-        ops = genlib2.registry_ops(raw, tid, [nid]) + genlib2.registry_ops(raw, sym, [nid], must=tid)
+        ops = genlib2.registry_ops(raw, tid, [nid]) + (genlib2.registry_ops(raw, sym, [nid], must=tid) if sym is not None else [])
         out = bytearray(raw)
         for pos, dl, ins in sorted(ops, key=lambda o: -o[0]): out[pos:pos + dl] = ins
         return bytes(out)

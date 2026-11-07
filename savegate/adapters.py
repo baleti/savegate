@@ -607,8 +607,9 @@ def _plain_damage(n, d):
             if d[:4] != b'\x62\x19\x22\x05': return ['%s: bad magic' % n]
             if len(d) < 128: return ['%s: only %d bytes (truncated)' % (n, len(d))]      # c5x-rvtread2: smallest real Contents seen is 195 bytes (public) / 252 (local)
         elif n == 'TransmissionData':
-            if len(d) < 4 or 4 + 2 * struct.unpack('<I', d[:4])[0] != len(d): return ['%s: length field does not match' % n]
-            from xml.dom import minidom; minidom.parseString(d[4:].decode('utf-16le').rstrip('\0').encode())
+            tn = struct.unpack('<I', d[:4])[0] if len(d) >= 4 else -1
+            if tn < 0 or 4 + 2 * tn > len(d): return ['%s: length field larger than the stream (truncated)' % n]      # c5x-rvtread2: was '!= len(d)', a false positive on 8 of 269 real files that carry 2 or 110 extra bytes after the declared XML
+            from xml.dom import minidom; minidom.parseString(d[4:4 + 2 * tn].decode('utf-16le').rstrip('\0').encode())
     except Exception as ex: return ['%s: %s' % (n, type(ex).__name__)]
     return []
 

@@ -103,6 +103,7 @@ def sweep_orphan_parts(path, idle=300):
 
 def _prune(path, keep, max_bytes=0):
     """keep the newest `keep` backups; with max_bytes also drop the oldest until the total fits (the newest is always kept)."""
+    keep = max(1, keep)       # c4x-rvtgap: keep=0 (or negative) dropped the backup that was JUST made, leaving nothing to restore from
     sweep_orphan_parts(path)
     bl = list_backups(path)
     pinned = bl[-1][1] if keep >= 2 and bl else None      # c5x-rvtread2 (HB2): the pristine original is also exempt from the byte cap

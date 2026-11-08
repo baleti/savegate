@@ -38,3 +38,9 @@ def test_element_view_refuses_reader_debug_switches(flag, monkeypatch):
     from savegate import rvt_elements as R
     monkeypatch.setenv(flag, '1')
     with pytest.raises(RuntimeError): R._elements(b'x')
+
+def test_empty_rvt_geom_in_the_environment_is_refused_not_missed():
+    code = CODE % (PKG, '', SRC)
+    env = dict(os.environ); env['RVT_GEOM'] = ''
+    out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=600).stdout
+    assert out.strip() != '[]' and ('dangling_after_delete' in out or 'delete_references_unchecked' in out), out

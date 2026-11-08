@@ -139,8 +139,12 @@ def _check_deleted_once(src_path, ops):
             gone.add(i)
 
 
-def run(src_path, ops, dst_path):
+def run(src_path, ops, dst_path, check_source=True):
     _lab(); import rvtgen
+    if check_source:      # never write a new file from a damaged source (damage would be carried forward or hidden)
+        from .adapters import RvtAdapter
+        with open(src_path, 'rb') as _f: _d = RvtAdapter().source_damage(_f.read())
+        if _d: raise ValueError('source file is damaged (%d finding(s), first: %s): refusing to write' % (len(_d), str(_d[0])[:120]))
     for o in ops: _check_numbers(o)
     _check_deleted_once(src_path, ops)
     g = rvtgen.Gen(src_path); new_ids = []

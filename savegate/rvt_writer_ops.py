@@ -145,6 +145,8 @@ def run(src_path, ops, dst_path, check_source=True):
         from .adapters import RvtAdapter
         with open(src_path, 'rb') as _f: _d = RvtAdapter().source_damage(_f.read())
         if _d: raise ValueError('source file is damaged (%d finding(s), first: %s): refusing to write' % (len(_d), str(_d[0])[:120]))
+    import os as _os
+    if _os.path.exists(dst_path) and _os.path.samefile(src_path, dst_path): raise ValueError('output path is the source file: WO.run writes non-atomically, use the gate (temp copy + atomic replace)')
     for o in ops: _check_numbers(o)
     _check_deleted_once(src_path, ops)
     g = rvtgen.Gen(src_path); new_ids = []

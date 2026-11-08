@@ -64,7 +64,7 @@ def purge_reader_cache(path):
     try:
         import hashlib, glob
         st = os.stat(path); ap = os.path.abspath(path)
-        key = hashlib.sha1(('%s|%d|%d' % (ap, st.st_size, int(st.st_mtime))).encode()).hexdigest()[:16]
+        key = hashlib.sha1(('%s|%d|%d|%d' % (ap, st.st_size, st.st_mtime_ns, st.st_ctime_ns)).encode()).hexdigest()[:16]   # must equal rvt_fast.file_key
         try:
             import rvt_xcache
             k2 = rvt_xcache.key_for(path)

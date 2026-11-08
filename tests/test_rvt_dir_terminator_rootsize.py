@@ -18,3 +18,6 @@ def test_terminator_and_rootsize_flips_refused(tmp_path):
     offs = [20, 21, 14 + 128, 15 + 128, 120, 122, 127]   # entry 0 terminator, entry 1 terminator, root size low/high bytes
     acc = [i for i in offs if run(good[:base + i] + bytes([good[base + i] ^ 0x10]) + good[base + i + 1:])]
     assert not acc, acc
+    free = [i for i, e in enumerate(cfb.CFB(good).entries) if e.type == 0]; assert free
+    acc = [b for b in (100, 110, 116, 120, 127) if run(good[:base + free[0] * 128 + b] + bytes([good[base + free[0] * 128 + b] ^ 0x10]) + good[base + free[0] * 128 + b + 1:])]   # queue 152: free directory entry times/start/size
+    assert not acc, acc

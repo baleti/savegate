@@ -1194,7 +1194,8 @@ class RvtAdapter:
                         except IndexError: continue      # an ElemTable row without a framed record (the source itself has such unresolved ids): it holds no references
                         except Exception as ex2: raise ValueError('element %s could not be decoded: %s' % (e, ex2))
                         walk(tr[2].get('fields'), e)
-            finally: os.unlink(p)
+            finally:
+                from .rvt_elements import purge_reader_cache; purge_reader_cache(p); os.unlink(p)
         except Exception as ex:
             return [('delete_references_unchecked', 'cannot prove that no element references the deleted id(s): %s' % ex)]
         return [('dangling_after_delete', 'el:%d is still referenced by elements %s' % (d, sorted(set(r))[:6])) for d, r in sorted(found.items())]

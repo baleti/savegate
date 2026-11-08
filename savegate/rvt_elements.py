@@ -59,6 +59,22 @@ def elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_re
     return out
 
 
+def purge_reader_cache(path):
+    """c4x-rvtgap 191: the reader caches by file path+size+mtime; the gate reads random temp copies, so every entry (80 MB per scan of a 28 MB project, derived from the user's file) is never reused and only fills the disk. Remove the entries of this temp copy."""
+    try:
+        import hashlib, glob
+        st = os.stat(path); ap = os.path.abspath(path)
+        key = hashlib.sha1(('%s|%d|%d' % (ap, st.st_size, int(st.st_mtime))).encode()).hexdigest()[:16]
+        import rvt_fast
+        dirs = [getattr(rvt_fast, 'CACHE', None), os.path.expanduser('~/.cache/rvt-progress')]
+        for d in dirs:
+            if not d: continue
+            for f in glob.glob(os.path.join(d, key + '*')):
+                try: os.remove(f)
+                except OSError: pass
+    except Exception: pass
+
+
 def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_records=True):
     bad = sorted(k for k in os.environ if os.environ[k] and ((k.startswith('RVT_NO') and k not in ('RVT_NOFAST', 'RVT_NOCACHE')) or k.startswith('RVT_OLD')))
     if bad: raise RuntimeError('reader debug switches change what the element view sees and would hide edits: %s' % ', '.join(bad))      # c4x-rvtgap 173
@@ -96,7 +112,7 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
                 if eid in out: out[eid] += '|P' + hashlib.sha1(json.dumps(d, default=repr, sort_keys=True).encode()).hexdigest()
         return out
     finally:
-        os.remove(p)
+        purge_reader_cache(p); os.remove(p)
         # c4x-rvtgap: the reader modules cache their per-file context in module dicts keyed by this one-shot temp path (rvt_geometry._ctx held ~18 MB per call for a
         # 3 MB file and was never reused: every save in a long-running app leaked it). Drop every entry for this path.
         for mn in ('rvt_geometry', 'rvt_xcache', 'rvt_params', 'rvt_scan', 'rvt_decode'):
@@ -127,7 +143,7 @@ def id_state(buf, reader_dir=None, lib=None):
                 if q + 4 <= n and struct.unpack_from('<I', b, q)[0] == L: found.add(struct.unpack_from(m.IDF, b, i + 4)[0])
         return sorted(int(x) for x in m.ids), sorted(int(x) for x in m.ids if int(x) not in found)
     finally:
-        os.remove(p)
+        purge_reader_cache(p); os.remove(p)
 
 
 def unresolved_ids(buf, reader_dir=None, lib=None):

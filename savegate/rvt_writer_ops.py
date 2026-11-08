@@ -10,6 +10,24 @@ def _lab():
         if p not in sys.path: sys.path.insert(0, p)
 
 
+def _rtf_escape(text):
+    """c7x-rvtread2 item 383: text for the body of the RTF stored in a TextNote. Backslash and the group braces are escaped (an unescaped } used to close the RTF document early),
+    control characters (NUL, CR, LF, ...) are refused, anything outside cp1252 becomes a \\uN? escape (it used to be replaced by '?' silently), lone surrogates are refused."""
+    out = bytearray()
+    for ch in text:
+        c = ord(ch)
+        if c < 0x20 or c == 0x7f: raise ValueError('text note text contains control character U+%04X' % c)
+        if 0xD800 <= c <= 0xDFFF: raise ValueError('text note text contains a lone surrogate U+%04X' % c)
+        if ch in '\\{}': out += b'\\' + ch.encode('ascii')
+        else:
+            try: b1 = ch.encode('cp1252'); out += (b1 if b1[0] < 0x80 else b"\\'%02x" % b1[0])
+            except UnicodeEncodeError:
+                u = ch.encode('utf-16-le')
+                for k in range(0, len(u), 2):
+                    v = int.from_bytes(u[k:k + 2], 'little'); out += b'\\u%d?' % (v - 65536 if v > 32767 else v)
+    return bytes(out)
+
+
 def make_textnote_rtf(g, T, nid, x, y, text, z=0.0):
     """clone a TextNote whose text lives in the rich-text stream only (empty fragment array, as in 2024 project files) with a new id, position and text"""
     _lab(); from genlib2 import rep, setphase, restamp
@@ -22,7 +40,7 @@ def make_textnote_rtf(g, T, nid, x, y, text, z=0.0):
     rtf = bytes(rec[rt0 + 4:rt1]); i = rtf.index(b'\\fs') + 3
     while rtf[i:i + 1].isdigit(): i += 1
     i += 1; j = rtf.rindex(b'\\par')
-    new = rtf[:i] + text.encode('cp1252', errors='replace').replace(b'\\', b'\\\\') + rtf[j:]
+    new = rtf[:i] + _rtf_escape(text) + rtf[j:]
     rec = bytearray(rec[:rt0] + struct.pack('<I', len(new)) + new + rec[rt1:])
     hdr = bytearray(T['hdr']); hdr[0:W] = idb
     item = bytearray(T['item']); rep(item, T['tid'].to_bytes(W, 'little'), idb)
@@ -82,8 +100,49 @@ def deleted_ids(src_path, ops):
     return out
 
 
+NUMERIC_KEYS = ('dx', 'dy', 'dz', 'x', 'y', 'z', 'height', 'length_delta', 'deg')
+MAX_ABS = 1.0e5          # feet; Revit refuses geometry far beyond ~20 miles from the origin
+
+
+def _check_numbers(o):
+    """c7x-rvtread2 item 376: NaN/inf/absurd numbers must never be packed into a record (NaN was written into a wall by move_element dx=nan)."""
+    import math
+    if not isinstance(o, dict) or not isinstance(o.get('op'), str): raise ValueError('op entry must be a dict with a string "op": %r' % (o,))
+    for k in ('id', 'template', 'symbol'):
+        if k in o and (type(o[k]) is not int or o[k] <= 0): raise ValueError('op %s: %s=%r must be a positive integer' % (o['op'], k, o[k]))
+    for k in NUMERIC_KEYS:
+        if k in o and o[k] is not None:
+            if type(o[k]) not in (int, float): raise ValueError('op %s: %s=%r must be a number (int or float), not %s' % (o['op'], k, o[k], type(o[k]).__name__))
+            v = float(o[k])
+            if not math.isfinite(v) or (k != 'deg' and abs(v) > MAX_ABS): raise ValueError('op %s: %s=%r is not a finite value within +-%g' % (o.get('op'), k, o[k], MAX_ABS))
+
+
+MODIFY_OPS = ('move_instance', 'move_element', 'rotate_instance', 'resize_wall', 'set_instance_type', 'move_textnote')
+
+
+def _check_deleted_once(src_path, ops):
+    """c7x-rvtread2 item 381: a second delete of the same id used to remove NEIGHBOURING records (delete+delete of TextNote 916133 lost 3 records: the TextNote, a Viewport and a FamilyInstance).
+    An id may be deleted once per run and no later op may touch a deleted id."""
+    gone = set(); modified = set()
+    for o in ops:
+        if o['op'] in MODIFY_OPS:
+            if int(o['id']) in modified: raise ValueError('element %d is modified twice in one run (%s): edits of one element do not compose (the last one silently wins, item 395); combine them into one op or save twice' % (int(o['id']), o['op']))
+            modified.add(int(o['id']))
+        if o['op'] == 'delete': ids = [int(o['id'])]
+        elif o['op'] == 'delete_cascade': ids = cascade_plan(src_path, int(o['id']))
+        else:
+            for k in ('id', 'template'):
+                if k in o and int(o[k]) in gone: raise ValueError('op %s touches element %s deleted earlier in the same run' % (o['op'], o[k]))
+            continue
+        for i in ids:
+            if i in gone: raise ValueError('element %d is deleted twice in one run' % i)
+            gone.add(i)
+
+
 def run(src_path, ops, dst_path):
     _lab(); import rvtgen
+    for o in ops: _check_numbers(o)
+    _check_deleted_once(src_path, ops)
     g = rvtgen.Gen(src_path); new_ids = []
     for o in ops:
         if o['op'] == 'delete': g.delete(int(o['id']))
@@ -98,6 +157,7 @@ def run(src_path, ops, dst_path):
         elif o['op'] in ('move_instance', 'move_element'):
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
         elif o['op'] in ('add_instance', 'add_element'):
+            if not any(float(o.get(k, 0)) for k in ('dx', 'dy', 'dz')): raise ValueError('op %s: an all-zero offset would put the copy exactly on top of element %s; give a non-zero dx/dy/dz' % (o['op'], o.get('template')))
             new_ids.append(_add_instance(g, int(o['template']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0)))))
         elif o['op'] == 'set_instance_type':
             _set_instance_type(g, src_path, int(o['id']), int(o['symbol']))
@@ -155,8 +215,8 @@ def _move_instance(g, tid, d):
 
 def _rotate_instance(g, tid, deg):
     """ROTATE a FamilyInstance about its own origin (Trf.m_or) around the Z axis by deg degrees (counter-clockwise, applied to the world-side of the stored 3x3: new = Rz * M column by column):
-    Trf.m_3x3 and FamilyInstance.m_RefDir in the record, Outline.m_minmax in the header entry becomes the box of the four rotated corners (z unchanged). The origin, m_zAxis and the zone
-    record do not change. Sign/transposition convention of the stored matrix is verified only by the Revit VM."""
+    Trf.m_3x3 and FamilyInstance.m_RefDir in the record, Outline.m_minmax in the header entry becomes the box of the four rotated corners (z unchanged). The origin and the zone
+    record do not change; m_zAxis turns with the matrix (identity for +Z instances). Sign/transposition convention of the stored matrix is verified only by the Revit VM."""
     import math
     W = 8; T = g.template(tid); rec = bytearray(T['rec']); L = {n: (o, e) for n, o, e, _ in T['log']}
     c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
@@ -166,6 +226,7 @@ def _rotate_instance(g, tid, deg):
     cols = [rz((M[0], M[3], M[6])), rz((M[1], M[4], M[7])), rz((M[2], M[5], M[8]))]
     struct.pack_into('<9d', rec, o3, cols[0][0], cols[1][0], cols[2][0], cols[0][1], cols[1][1], cols[2][1], cols[0][2], cols[1][2], cols[2][2])
     r0 = L['FamilyInstance.m_RefDir'][0]; struct.pack_into('<3d', rec, r0, *rz(struct.unpack_from('<3d', rec, r0)))
+    if 'FamilyInstance.m_zAxis' in L: z0 = L['FamilyInstance.m_zAxis'][0]; struct.pack_into('<3d', rec, z0, *rz(struct.unpack_from('<3d', rec, z0)))   # c7x-rvtread2 item 388: m_zAxis is the world direction of the local z (matrix column 3); it is horizontal for 10 of 1432 instances in the Snowdon Structural sample and must turn with them
     hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}
     if 'Outline.m_minmax' in hl:
         a = hl['Outline.m_minmax'][0]; mm = struct.unpack_from('<6d', hdr, a)
@@ -175,6 +236,7 @@ def _rotate_instance(g, tid, deg):
     g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
 
 
+MIN_WALL_LENGTH = 0.1      # ft
 WALL_USER_HEIGHT = -1001105          # BuiltInParameter.WALL_USER_HEIGHT_PARAM (Unconnected Height)
 
 
@@ -190,6 +252,7 @@ def _resize_wall(g, tid, height=None, length_delta=None):
     if abs(d[2]) > 1e-9 or (abs(abs(d[0]) - 1) > 1e-9 and abs(abs(d[1]) - 1) > 1e-9): raise ValueError('only walls along x or y are supported (direction %s)' % (d,))
     hdr = bytearray(T['hdr']); hl = {n: (o, e) for n, o, e, _ in T['hlog']}; a = hl['Outline.m_minmax'][0]; mm = list(struct.unpack_from('<6d', hdr, a))
     if height is not None:
+        if float(height) < MIN_WALL_LENGTH: raise ValueError('resize_wall: height %.4f ft is below the minimum %.2f ft' % (float(height), MIN_WALL_LENGTH))
         h = float(height); last = None; done = 0
         for n, o, e, _ in log:
             if n == 'ParamValueDouble.m_paramId': last = struct.unpack_from('<q', rec, o)[0]
@@ -200,7 +263,9 @@ def _resize_wall(g, tid, height=None, length_delta=None):
     if length_delta is not None:
         dl = float(length_delta)
         if not ep: raise ValueError('wall has no GCurve.m_endParams')
-        p0, p1 = struct.unpack_from('<2d', rec, ep[0]); struct.pack_into('<2d', rec, ep[0], p0, p1 + dl)
+        p0, p1 = struct.unpack_from('<2d', rec, ep[0])
+        if p1 + dl - p0 < MIN_WALL_LENGTH: raise ValueError('resize_wall: new length %.4f ft is below the minimum %.2f ft (c7x-rvtread2 item 389; a zero or negative length wall was accepted)' % (p1 + dl - p0, MIN_WALL_LENGTH))
+        struct.pack_into('<2d', rec, ep[0], p0, p1 + dl)
         for o in env: c = list(struct.unpack_from('<4d', rec, o)); c[2] += dl; struct.pack_into('<4d', rec, o, *c)
         ax = 0 if abs(d[0]) > 0.5 else 1; sign = d[ax]
         if sign > 0: mm[3 + ax] += dl

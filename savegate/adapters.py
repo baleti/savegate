@@ -1171,7 +1171,8 @@ class RvtAdapter:
                     # c5x-rvtgap: tracing every element took ~1 hour on a 28 MB project. The reader's record cache (decoded fields of every record, built once for the element
                     # view anyway) gives the same inbound references in ~3 s (checked against the full trace on the 2024 Snowdon Structural sample: identical answers for 5 elements).
                     # Elements the cache did not decode (a handful) are traced one by one so that no possible referrer is skipped.
-                    import rvt_xcache
+                    import rvt_xcache, rvt_decode
+                    if tuple(getattr(rvt_decode.Dec, 'STOP', ())): raise ValueError('reader imported without RVT_GEOM: geometry tables are not decoded, references inside them would be missed')
                     x = rvt_xcache.get_x_ro(p); seen = set()
                     def walk(v, me, depth=0):
                         if depth > 12: return

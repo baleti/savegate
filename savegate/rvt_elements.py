@@ -67,7 +67,7 @@ def purge_reader_cache(path):
         key = hashlib.sha1(('%s|%d|%d' % (ap, st.st_size, int(st.st_mtime))).encode()).hexdigest()[:16]
         try:
             import rvt_xcache
-            k2 = hashlib.sha1(('%s|%d|%d|%d' % (path, st.st_size, int(st.st_mtime), int(os.path.getmtime(os.path.join(os.path.dirname(os.path.abspath(rvt_xcache.__file__)), 'rvt_decode.py'))))).encode()).hexdigest()
+            k2 = rvt_xcache.key_for(path)
             os.remove(os.path.join(rvt_xcache.D, k2 + '.pkl'))
         except Exception: pass
         import rvt_fast

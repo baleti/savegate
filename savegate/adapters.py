@@ -880,7 +880,7 @@ class RvtAdapter:
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""
-        meta = [k for k in manifest.get('modified', ()) if str(k).split(':', 1)[-1] in rvtw_META and not os.environ.get('SAVEGATE_RVT_ALLOW_META')]
+        meta = [k for k in manifest.get('modified', ()) if str(k).split(':', 1)[-1] in rvtw_META and not (os.environ.get('SAVEGATE_RVT_ALLOW_META') and os.environ.get('PYTEST_CURRENT_TEST'))]
         if meta: return [('metadata_stream_declared', '%s: file metadata streams (version/build/worksharing, thumbnail, transmission data) carry no integrity data and no edit needs them; a flip there passed the gate when declared' % ', '.join(map(str, meta)))]
         exp = self._expect_checks(manifest)
         if exp: return exp

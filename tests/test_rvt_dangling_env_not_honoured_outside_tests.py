@@ -11,3 +11,9 @@ def test_flag_still_works_under_pytest(monkeypatch):
     monkeypatch.setenv('SAVEGATE_RVT_ALLOW_DANGLING_DELETE', '1')
     a = A.RvtAdapter(); a._src_buf = b'not an rvt'
     assert a._delete_reference_checks({'deleted': ['el:5']}) == []
+
+def test_allow_meta_flag_is_ignored_without_pytest():
+    code = "import sys; sys.path.insert(0, %r)\nfrom savegate import adapters as A\na = A.RvtAdapter()\nprint(a.extra_checks({'modified': ['BasicFileInfo']}))\n" % PKG
+    env = {k: v for k, v in os.environ.items() if k != 'PYTEST_CURRENT_TEST'}; env['SAVEGATE_RVT_ALLOW_META'] = '1'
+    out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=120).stdout
+    assert 'metadata_stream_declared' in out, out

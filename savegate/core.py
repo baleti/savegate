@@ -276,8 +276,10 @@ def _save(doc, new_bytes, manifest, force, verify):
             if not backup: raise DiskError('%s; NO backup was taken, the file may be damaged' % e) from e
             try:
                 with open(long_path(backup), 'rb') as bf: prev_bytes = bf.read()
+                want = doc.fingerprint.sha256 or hashlib.sha256(prev_bytes).hexdigest()      # the hash of the file as opened (c1x-review 382): a damaged backup must never be written back as 'restored'
+                if hashlib.sha256(prev_bytes).hexdigest() != want: raise DiskError('backup %s does not match the pre-save hash' % backup)
                 tmp2 = atomic.write_temp(doc.path, prev_bytes); atomic.commit_temp(tmp2, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly)
-                ok = sha256_file(doc.path) == hashlib.sha256(prev_bytes).hexdigest()
+                ok = sha256_file(doc.path) == want
             except Exception as e2:
                 raise DiskError('%s; automatic restore from %s FAILED (%s): run RESTORE' % (e, backup, e2)) from e
             raise DiskError('%s; the pre-save version was %s from %s' % (e, 'restored' if ok else 'NOT restored correctly (run RESTORE)', backup)) from e

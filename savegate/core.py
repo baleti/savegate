@@ -271,7 +271,16 @@ def _save(doc, new_bytes, manifest, force, verify):
             try: os.remove(long_path(tmp))
             except OSError: pass
             raise
-        h = _finish_check(doc.path, new_bytes)
+        try: h = _finish_check(doc.path, new_bytes)
+        except DiskError as e:      # c4x-rvtgap: the renamed file does not hold the verified bytes: put the pre-save file back instead of leaving a damaged original
+            if not backup: raise DiskError('%s; NO backup was taken, the file may be damaged' % e) from e
+            try:
+                with open(long_path(backup), 'rb') as bf: prev_bytes = bf.read()
+                tmp2 = atomic.write_temp(doc.path, prev_bytes); atomic.commit_temp(tmp2, doc.path, copy_mode_from=doc.path, keep_readonly=cfg.allow_readonly)
+                ok = sha256_file(doc.path) == hashlib.sha256(prev_bytes).hexdigest()
+            except Exception as e2:
+                raise DiskError('%s; automatic restore from %s FAILED (%s): run RESTORE' % (e, backup, e2)) from e
+            raise DiskError('%s; the pre-save version was %s from %s' % (e, 'restored' if ok else 'NOT restored correctly (run RESTORE)', backup)) from e
         from .guard import Fingerprint
         st = os.stat(long_path(doc.path))
         doc.buf = new_bytes; doc.fingerprint = Fingerprint(len(new_bytes), st.st_mtime_ns, h)

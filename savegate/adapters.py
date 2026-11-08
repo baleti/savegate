@@ -1273,6 +1273,8 @@ class RvtAdapter:
                 if n in sg_ and t != sg_[n] and t.rstrip(b'\0'): raise VerifyFailed('%s: bytes after the gzip member differ from the source and are not zero padding' % n)
         dmg = [d for d in self._damage(buf) if d not in getattr(self, '_src_dmg', ())]       # c5x-rvtgap: the written bytes get the same page ECC / gzip CRC+size check as the source (a modified stream is exempt from the hash diff); damage already present in the source (SAVE AS rescue copy) is not new
         if dmg: raise VerifyFailed('output fails the integrity check: %s' % '; '.join(dmg[:3]))
+        tl = self._unreferenced_tail(buf)       # c4x-rvtgap: whole unreferenced sectors appended after the last used sector (compact container expected)
+        if tl and not [d for d in tl if d in getattr(self, '_src_dmg', ())]: raise VerifyFailed('output: %s' % tl[0])
         try:
             import rvtw, wlpart
             for n, e in s.items():

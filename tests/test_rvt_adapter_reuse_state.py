@@ -87,3 +87,16 @@ def test_element_view_failure_on_the_output_does_not_poison_the_next_save(tmp_pa
     cur, doc = _doc(a, SRC, tmp_path, 'c3.rfa'); before = open(cur, 'rb').read()
     with pytest.raises(sg.SaveError): sg.save(doc, bad, {'modified': ['stream:Partitions/67', 'el:7']})
     assert open(cur, 'rb').read() == before
+
+def test_reference_scan_that_cannot_run_refuses_and_the_next_scan_still_works(monkeypatch):
+    import rvt_xcache
+    from savegate import adapters
+    a = adapters.RvtAdapter(); a._src_buf = open(SRC26, 'rb').read()
+    real = rvt_xcache.get_x_ro
+    def boom(p): raise RuntimeError('simulated reader failure')
+    monkeypatch.setattr(rvt_xcache, 'get_x_ro', boom)
+    r = a._delete_reference_checks({'deleted': ['el:11']})
+    assert r and r[0][0] == 'delete_references_unchecked', r
+    monkeypatch.setattr(rvt_xcache, 'get_x_ro', real)
+    r2 = a._delete_reference_checks({'deleted': ['el:11']})
+    assert r2 and r2[0][0] in ('dangling_after_delete',), r2      # el:11 is referenced in the family (c2x-rvtgap 17)

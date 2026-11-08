@@ -1222,6 +1222,7 @@ class RvtAdapter:
         c = cfb.CFB(buf); ss = c.ss; out = {}
         fat = []
         fat = list(c.fat)
+        if ss > 512 and any(buf[512:ss]): out['hdrpad'] = bytes(buf[512:ss])      # c4x-rvtgap 206: header padding of a 4096-byte-sector file (flip at 830 was accepted)
         ns = len(buf) // ss - 1
         for name, e in c.streams().items():
             if e.size >= c.cutoff and e.size % ss:
@@ -1244,6 +1245,9 @@ class RvtAdapter:
                         if any(t): out['mini:' + name] = t
             t = rb[root.size:]
             if any(t): out['minitail'] = t
+            if mfat is not None:      # c4x-rvtgap 206: miniFAT entries past the last mini sector of the mini-stream are FREESECT; a flip there (offset 408128 of a 2026 family output) was accepted
+                tl = mfat[(root.size + 63) // 64:]
+                if any(x != 0xFFFFFFFF for x in tl) and any(tl): out['minifat_tail'] = struct.pack('<%dI' % len(tl), *tl)
         except (IndexError, struct.error, ValueError, AttributeError): pass
         return out
 

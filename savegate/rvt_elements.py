@@ -86,7 +86,7 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
     reader_dir = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
     if reader_dir not in sys.path: sys.path.insert(0, reader_dir)
     import rvt_geometry as G
-    fd, p = tempfile.mkstemp(suffix='.rvt'); os.close(fd)
+    fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.close(fd)
     try:
         with open(p, 'wb') as f: f.write(buf)
         idx = G.file_geometry_index(p)
@@ -136,7 +136,7 @@ def id_state(buf, reader_dir=None, lib=None):
     for d in (reader_dir, lib):
         if d not in sys.path: sys.path.insert(0, d)
     import struct, wlrec, rvt_scan as S
-    fd, p = tempfile.mkstemp(suffix='.rvt'); os.close(fd)
+    fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.close(fd)
     try:
         with open(p, 'wb') as f: f.write(buf)
         m = wlrec.Model(p); W = m.IDW; found = set()

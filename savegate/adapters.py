@@ -836,7 +836,7 @@ class RvtAdapter:
         ops = manifest.get('writer_ops') or []
         if not ops: return [('writer_op_unsupported', 'empty writer_ops')]
         import tempfile as _tf
-        fd0, p0 = _tf.mkstemp(suffix='.rvt'); os.write(fd0, bytes(src)); os.close(fd0)
+        fd0, p0 = _tf.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd0, bytes(src)); os.close(fd0)
         try: dids = WO.deleted_ids(p0, ops)
         except Exception as ex: return [('writer_ops_unplannable', '%s: %s' % (type(ex).__name__, str(ex)[:200]))]
         finally: os.unlink(p0)
@@ -847,8 +847,8 @@ class RvtAdapter:
         if dids: bad += list(self._delete_reference_checks({'deleted': ['el:%d' % i for i in sorted(dids)]}))
         paths = []
         try:
-            fd, p1 = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(src)); os.close(fd); paths.append(p1)
-            fd, p2 = tempfile.mkstemp(suffix='.rvt'); os.close(fd); paths.append(p2)
+            fd, p1 = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(src)); os.close(fd); paths.append(p1)
+            fd, p2 = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.close(fd); paths.append(p2)
             new_ids = WO.run(p1, ops, p2)
             if set(new_ids) != adecl: bad.append(('writer_ops_mismatch', 'the operations add %s but the declaration says %s' % (sorted(new_ids), sorted(adecl))))
             if open(p2, 'rb').read() != bytes(out): bad.append(('writer_output_mismatch', 'the output is not what the trusted writer produces for %s' % [o.get('op') for o in ops]))
@@ -970,7 +970,7 @@ class RvtAdapter:
         h = getattr(self, '_buf_hist', [])
         if not ids or len(h) < 2: return []
         import math, tempfile, wledit
-        fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(h[1])); os.close(fd)
+        fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(h[1])); os.close(fd)
         bad = []; p2 = None
         try:
             ed = wledit.Editor(p)
@@ -988,7 +988,7 @@ class RvtAdapter:
             sed = None; p2 = None
             sb = getattr(self, '_src_buf', None)
             if sb is not None:
-                fd2, p2 = tempfile.mkstemp(suffix='.rvt'); os.write(fd2, bytes(sb)); os.close(fd2)
+                fd2, p2 = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd2, bytes(sb)); os.close(fd2)
                 try: sed = wledit.Editor(p2)
                 except Exception: sed = None
             for e in sorted(ids):
@@ -1026,7 +1026,7 @@ class RvtAdapter:
         try:
             import wledit, cfb, rvtw, wlpart
             def mk(b):
-                fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
+                fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
             ed = mk(h[0]); pn = None; lo, hi = None, None
             for e in ids:
                 t = ed.trace(e)
@@ -1066,7 +1066,7 @@ class RvtAdapter:
         try:
             import numpy as np, cfb, rvtw, wlpart, rvt_scan as S, rvt_inventory as I
             def amap(buf):
-                fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(buf)); os.close(fd); paths.append(p)
+                fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(buf)); os.close(fd); paths.append(p)
                 o, cls, ids = S.load(p); W = S.id_size(cls); hs = 12 + W; etags = I.element_tags(cls)
                 c = cfb.CFB(bytes(buf)); out = {}
                 arr = np.array(sorted(ids), dtype=np.uint32 if W == 4 else np.uint64)
@@ -1107,7 +1107,7 @@ class RvtAdapter:
         import tempfile, wledit
         paths = []
         def mk(b):
-            fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
+            fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
         def nonelem(v):
             """negative ids (built-in categories, 'none' markers): 64-bit -N is >= 2**62; the 2016-2023 32-bit encoding of the same is 0xFF000000..0xFFFFFFFF"""
             return v >= 2 ** 62 or 0xFF000000 <= v <= 0xFFFFFFFF
@@ -1156,7 +1156,7 @@ class RvtAdapter:
         try:
             if buf is None: raise ValueError('no source buffer')
             import tempfile, wledit, struct
-            fd, p = tempfile.mkstemp(suffix='.rvt'); os.write(fd, bytes(buf)); os.close(fd)
+            fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(buf)); os.close(fd)
             try:
                 ed = wledit.Editor(p); found = {}
                 if os.environ.get('SAVEGATE_RVT_SLOW_REFS'):

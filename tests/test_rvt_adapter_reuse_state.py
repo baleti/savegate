@@ -110,7 +110,7 @@ def test_no_space_for_temp_copies_leaves_the_original_untouched(tmp_path, monkey
     cur, doc = _doc(None, SRC, tmp_path, 'c.rfa'); before = open(cur, 'rb').read()
     real = tempfile.mkstemp; n = {'c': 0}
     def flaky(*a, **k):
-        if k.get('dir') is None and k.get('suffix') == '.rvt':
+        if k.get('suffix') == '.rvt':
             n['c'] += 1
             if n['c'] == nth: raise OSError(errno.ENOSPC, 'No space left on device')
         return real(*a, **k)

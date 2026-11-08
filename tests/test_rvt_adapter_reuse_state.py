@@ -40,3 +40,27 @@ def test_refused_accepted_refused_with_one_adapter_across_two_years(tmp_path):
         cur, doc = _doc(a, src, tmp_path, 'c3.rfa'); before = open(cur, 'rb').read()
         with pytest.raises(sg.SaveError): sg.save(doc, bad, {'modified': ['stream:Partitions/67', 'el:7']})
         assert open(cur, 'rb').read() == before
+
+def test_exception_while_hashing_the_output_does_not_poison_the_next_save(tmp_path):
+    import savegate as sg
+    from savegate import adapters
+    a = adapters.RvtAdapter(); a.elements_fn = adapters._default_rvt_elements()
+    sec = _second(SRC)
+    if not sec: pytest.skip('no second named element')
+    bad = _edit(SRC, [(7, 'FillPattern.m_name', 'A'), (sec[0], sec[1], 'B')], str(tmp_path / 'bad.rfa'))
+    good = _edit(SRC, [(7, 'FillPattern.m_name', 'Reuse OK')], str(tmp_path / 'good.rfa'))
+    orig = a._member_hashes; n = {'c': 0}
+    def flaky(c):
+        n['c'] += 1
+        if n['c'] == 2: raise RuntimeError('simulated failure while hashing the output')
+        return orig(c)
+    a._member_hashes = flaky
+    cur, doc = _doc(a, SRC, tmp_path, 'c.rfa'); before = open(cur, 'rb').read()
+    with pytest.raises(Exception): sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == before
+    a._member_hashes = orig
+    cur, doc = _doc(a, SRC, tmp_path, 'c2.rfa')
+    assert sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']}).ok
+    cur, doc = _doc(a, SRC, tmp_path, 'c3.rfa'); before = open(cur, 'rb').read()
+    with pytest.raises(sg.SaveError): sg.save(doc, bad, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == before

@@ -64,3 +64,26 @@ def test_exception_while_hashing_the_output_does_not_poison_the_next_save(tmp_pa
     cur, doc = _doc(a, SRC, tmp_path, 'c3.rfa'); before = open(cur, 'rb').read()
     with pytest.raises(sg.SaveError): sg.save(doc, bad, {'modified': ['stream:Partitions/67', 'el:7']})
     assert open(cur, 'rb').read() == before
+
+def test_element_view_failure_on_the_output_does_not_poison_the_next_save(tmp_path):
+    import savegate as sg
+    from savegate import adapters
+    a = adapters.RvtAdapter(); real = adapters._default_rvt_elements(); n = {'c': 0}
+    def flaky(buf):
+        n['c'] += 1
+        if n['c'] == 2: raise RuntimeError('simulated element view failure on the output')
+        return real(buf)
+    a.elements_fn = flaky
+    sec = _second(SRC)
+    if not sec: pytest.skip('no second named element')
+    bad = _edit(SRC, [(7, 'FillPattern.m_name', 'A'), (sec[0], sec[1], 'B')], str(tmp_path / 'bad.rfa'))
+    good = _edit(SRC, [(7, 'FillPattern.m_name', 'Reuse OK')], str(tmp_path / 'good.rfa'))
+    cur, doc = _doc(a, SRC, tmp_path, 'c.rfa'); before = open(cur, 'rb').read()
+    with pytest.raises(sg.SaveError): sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == before
+    a.elements_fn = real
+    cur, doc = _doc(a, SRC, tmp_path, 'c2.rfa')
+    assert sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']}).ok
+    cur, doc = _doc(a, SRC, tmp_path, 'c3.rfa'); before = open(cur, 'rb').read()
+    with pytest.raises(sg.SaveError): sg.save(doc, bad, {'modified': ['stream:Partitions/67', 'el:7']})
+    assert open(cur, 'rb').read() == before

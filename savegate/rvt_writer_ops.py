@@ -148,6 +148,15 @@ def run(src_path, ops, dst_path, check_source=True):
     for o in ops: _check_numbers(o)
     _check_deleted_once(src_path, ops)
     g = rvtgen.Gen(src_path); new_ids = []
+    try:
+      _apply_ops(g, src_path, ops, new_ids)
+    except (struct.error, KeyError, IndexError, OverflowError) as e:   # an id that does not map to a clean record (duplicate/phantom key) must be a loud ValueError, never a raw low-level crash
+        raise ValueError('writer op refused: element record not usable for this op (%s: %s)' % (type(e).__name__, str(e)[:80]))
+    g.commit(dst_path)
+    return new_ids
+
+
+def _apply_ops(g, src_path, ops, new_ids):
     for o in ops:
         if o['op'] == 'delete': g.delete(int(o['id']))
         elif o['op'] == 'add_textnote':
@@ -174,8 +183,6 @@ def run(src_path, ops, dst_path, check_source=True):
         elif o['op'] == 'rotate_instance':
             _rotate_instance(g, int(o['id']), float(o['deg']))
         else: raise ValueError('unknown writer op %r' % o.get('op'))
-    g.commit(dst_path)
-    return new_ids
 
 
 MOVE_FIELDS = ('Trf.m_or', 'Plane.m_origin', 'GLine.m_origin')

@@ -100,3 +100,26 @@ def test_reference_scan_that_cannot_run_refuses_and_the_next_scan_still_works(mo
     monkeypatch.setattr(rvt_xcache, 'get_x_ro', real)
     r2 = a._delete_reference_checks({'deleted': ['el:11']})
     assert r2 and r2[0][0] in ('dangling_after_delete',), r2      # el:11 is referenced in the family (c2x-rvtgap 17)
+
+@pytest.mark.parametrize('nth', [1, 2, 3, 4])
+def test_no_space_for_temp_copies_leaves_the_original_untouched(tmp_path, monkeypatch, nth):
+    """c4x-rvtgap 194: /tmp is a 16 GB tmpfs on remote-host and the gate writes several temp copies of the file; ENOSPC at the n-th temp copy must refuse/abort, never damage the original, and the next save works."""
+    import errno, tempfile, savegate as sg
+    from savegate import adapters
+    good = _edit(SRC, [(7, 'FillPattern.m_name', 'Space OK')], str(tmp_path / 'good.rfa'))
+    cur, doc = _doc(None, SRC, tmp_path, 'c.rfa'); before = open(cur, 'rb').read()
+    real = tempfile.mkstemp; n = {'c': 0}
+    def flaky(*a, **k):
+        if k.get('dir') is None and k.get('suffix') == '.rvt':
+            n['c'] += 1
+            if n['c'] == nth: raise OSError(errno.ENOSPC, 'No space left on device')
+        return real(*a, **k)
+    monkeypatch.setattr(tempfile, 'mkstemp', flaky)
+    try: r = sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']}); failed = False
+    except (sg.SaveError, OSError): failed = True
+    after = open(cur, 'rb').read()
+    assert failed or after != before       # either refused, or really saved
+    if failed: assert after == before
+    monkeypatch.setattr(tempfile, 'mkstemp', real)
+    cur2, doc2 = _doc(None, SRC, tmp_path, 'c2.rfa')
+    assert sg.save(doc2, good, {'modified': ['stream:Partitions/67', 'el:7']}).ok

@@ -1225,6 +1225,18 @@ class RvtAdapter:
             if x == 0xFFFFFFFF:
                 t = bytes(buf[(i + 1) * ss:(i + 2) * ss])
                 if any(t): out['free:%d' % i] = t
+        try:      # c4x-rvtgap 151: mini-stream sector tails (small streams), and the root stream's bytes after the mini-stream size
+            root = c.entries[0]; rb = bytes(c._chain(root.start)); mfat = list(c.minifat) if hasattr(c, 'minifat') else None
+            if mfat is not None:
+                for name, e in c.streams().items():
+                    if 0 < e.size < c.cutoff and e.size % 64:
+                        m = e.start; k = 0
+                        while mfat[m] < 0xFFFFFFFA and k <= len(mfat): m = mfat[m]; k += 1
+                        t = rb[m * 64 + e.size % 64:(m + 1) * 64]
+                        if any(t): out['mini:' + name] = t
+            t = rb[root.size:]
+            if any(t): out['minitail'] = t
+        except (IndexError, struct.error, ValueError, AttributeError): pass
         return out
 
     def validate(self, buf):

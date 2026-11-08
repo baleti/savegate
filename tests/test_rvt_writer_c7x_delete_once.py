@@ -4,7 +4,7 @@ sys.path.insert(0, os.environ.get('SGPKG', os.path.expanduser('~/src/savegate'))
 from savegate import rvt_writer_ops as WO
 
 def _run(tmp_path, ops):
-    return WO.run(str(tmp_path / 'missing.rvt'), ops, str(tmp_path / 'o.rvt'))
+    return WO.run(str(tmp_path / 'missing.rvt'), ops, str(tmp_path / 'o.rvt'), check_source=False)
 
 def test_double_delete_refused(tmp_path):
     with pytest.raises(ValueError, match='twice'):

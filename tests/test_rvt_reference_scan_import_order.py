@@ -32,3 +32,9 @@ def test_element_view_refuses_a_truncated_reader():
     env = {k: v for k, v in os.environ.items() if k != 'RVT_GEOM'}
     out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=900).stdout
     assert 'REFUSED' in out and 'ACCEPTED' not in out, out
+
+@pytest.mark.parametrize('flag', ['RVT_NOHOST', 'RVT_NOUNIV', 'RVT_OLDCAND'])
+def test_element_view_refuses_reader_debug_switches(flag, monkeypatch):
+    from savegate import rvt_elements as R
+    monkeypatch.setenv(flag, '1')
+    with pytest.raises(RuntimeError): R._elements(b'x')

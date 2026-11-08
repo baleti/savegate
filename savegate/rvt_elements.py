@@ -60,6 +60,8 @@ def elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_re
 
 
 def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_records=True):
+    bad = sorted(k for k in os.environ if os.environ[k] and ((k.startswith('RVT_NO') and k not in ('RVT_NOFAST', 'RVT_NOCACHE')) or k.startswith('RVT_OLD')))
+    if bad: raise RuntimeError('reader debug switches change what the element view sees and would hide edits: %s' % ', '.join(bad))      # c4x-rvtgap 173
     reader_dir = reader_dir or os.environ.get('SAVEGATE_RVT_READER') or os.path.expanduser('~/rvt-research')
     if reader_dir not in sys.path: sys.path.insert(0, reader_dir)
     import rvt_geometry as G

@@ -1145,7 +1145,7 @@ class RvtAdapter:
         for k in manifest.get('deleted', ()):
             try: dels.add(int(str(k).split(':')[-1]))
             except ValueError: pass
-        if not dels or os.environ.get('SAVEGATE_RVT_ALLOW_DANGLING_DELETE'): return []      # env only for tests of the delete mechanics
+        if not dels or (os.environ.get('SAVEGATE_RVT_ALLOW_DANGLING_DELETE') and os.environ.get('PYTEST_CURRENT_TEST')): return []      # env only for tests of the delete mechanics
         buf = getattr(self, '_src_buf', None)
         try:
             if buf is None: raise ValueError('no source buffer')

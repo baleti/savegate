@@ -44,3 +44,13 @@ def test_empty_rvt_geom_in_the_environment_is_refused_not_missed():
     env = dict(os.environ); env['RVT_GEOM'] = ''
     out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=600).stdout
     assert out.strip() != '[]' and ('dangling_after_delete' in out or 'delete_references_unchecked' in out), out
+
+def test_element_view_refuses_empty_rvt_geom_on_a_family():
+    import glob
+    fam = glob.glob(os.path.expanduser('~/rvt-research/**/racbasicsamplefamily-2024.rfa'), recursive=True)
+    if not fam: pytest.skip('no sample family')
+    code = ("import sys\nsys.path.insert(0, %r)\nfrom savegate import rvt_elements as R\n"
+            "try:\n    R._elements(open(%r,'rb').read()); print('ACCEPTED')\nexcept Exception as e: print('REFUSED', e)\n") % (PKG, fam[0])
+    env = dict(os.environ); env['RVT_GEOM'] = ''
+    out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=600).stdout
+    assert 'REFUSED' in out, out

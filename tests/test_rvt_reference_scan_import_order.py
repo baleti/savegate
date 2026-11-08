@@ -24,3 +24,11 @@ def test_reader_imported_before_savegate_never_yields_an_empty_scan():
 def test_savegate_import_enables_geometry_decoding():
     out = _run('')
     assert 'dangling_after_delete' in out and '585174' in out, out
+
+def test_element_view_refuses_a_truncated_reader():
+    code = ("import sys, os\nsys.path.insert(0, %r); sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))\n"
+            "import rvt_decode\nfrom savegate import rvt_elements as R\n"
+            "try:\n    R._elements(open(%r,'rb').read()); print('ACCEPTED')\nexcept Exception as e: print('REFUSED', e)\n") % (PKG, SRC)
+    env = {k: v for k, v in os.environ.items() if k != 'RVT_GEOM'}
+    out = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=900).stdout
+    assert 'REFUSED' in out and 'ACCEPTED' not in out, out

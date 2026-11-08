@@ -80,7 +80,8 @@ def _elements(buf, reader_dir=None, with_geometry=True, with_params=True, with_r
         for eid, cls in idx.items():
             out[eid] = str(cls) + geo.get(eid, '')
         if with_records:    # every decoded record field per element (text notes, tags and other classes without geometry or parameters)
-            import rvt_xcache
+            import rvt_xcache, rvt_decode
+            if tuple(getattr(rvt_decode.Dec, 'STOP', ())): raise RuntimeError('reader imported without RVT_GEOM: geometry tables are not decoded, the element view would hide geometry edits')
             x = rvt_xcache.get_x_ro(p); acc = {}
             for (eid, c), r in x['recs'].items():
                 acc.setdefault(eid, []).append((c, hashlib.sha1(repr(r.get('fields')).encode()).hexdigest()))

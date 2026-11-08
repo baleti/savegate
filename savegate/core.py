@@ -130,6 +130,9 @@ def _produce(doc, new_bytes, manifest, dest, verify):
                 except SaveError: raise
                 except Exception as e: raise VerifyFailed('the output is not a readable file (%s); the original was not touched' % type(e).__name__, dict(error=type(e).__name__))
         T['verify'] = time.time() - t; rep['timing'] = T
+        try: w = doc.adapter.weakened()
+        except AttributeError: w = []
+        if w: rep['weakened'] = w      # c4x-rvtgap 185: env opt-outs that make the gate weaker are never silent
     except BaseException:
         try: os.remove(long_path(tmp))
         except OSError: pass

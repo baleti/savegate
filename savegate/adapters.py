@@ -877,6 +877,12 @@ class RvtAdapter:
             keep.append((kind, k))
         return keep
 
+    def weakened(self):
+        w = []
+        if os.environ.get('SAVEGATE_RVT_IDCHECK', '1') == '0': w.append('SAVEGATE_RVT_IDCHECK=0: element id table check off')
+        if not self.elements_fn: w.append('no element view: corrupted neighbour records with valid ECC/CRC are not detected')
+        return w
+
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""

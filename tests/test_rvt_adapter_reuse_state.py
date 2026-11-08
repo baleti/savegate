@@ -118,7 +118,8 @@ def test_no_space_for_temp_copies_leaves_the_original_untouched(tmp_path, monkey
     try: r = sg.save(doc, good, {'modified': ['stream:Partitions/67', 'el:7']}); failed = False
     except (sg.SaveError, OSError): failed = True
     after = open(cur, 'rb').read()
-    assert failed or after != before       # either refused, or really saved
+    if n['c'] < nth: pytest.skip('this save makes only %d temp copies' % n['c'])
+    assert failed, 'ENOSPC at temp copy %d was swallowed and the save went on' % nth
     if failed: assert after == before
     monkeypatch.setattr(tempfile, 'mkstemp', real)
     cur2, doc2 = _doc(None, SRC, tmp_path, 'c2.rfa')

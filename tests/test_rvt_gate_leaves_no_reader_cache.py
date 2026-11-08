@@ -36,3 +36,12 @@ def test_full_gated_save_leaves_no_cache_files(tmp_path):
     r = subprocess.run([sys.executable, '-c', SAVE_CODE % (PKG, src)], env=env, capture_output=True, text=True, timeout=600)
     assert r.stdout.strip().endswith('True'), r.stderr[-400:]
     assert os.listdir(str(c)) == [], os.listdir(str(c))
+
+def test_python_fallback_pickles_are_removed_too(tmp_path):
+    src = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa'); xd = os.path.expanduser('~/rvt-research/xcache')
+    if not (os.path.exists(src) and os.path.isdir(xd)): pytest.skip('no sample')
+    c = tmp_path / 'core'; c.mkdir(); env = dict(os.environ); env['RVT_CORE_CACHE'] = str(c); env['RVT_NOFAST'] = '1'
+    code = SAVE_CODE.replace("for f in os.listdir(os.environ['RVT_CORE_CACHE'])", "xd = %r\nbefore = set(os.listdir(xd))\nfor f in os.listdir(os.environ['RVT_CORE_CACHE'])" % xd)
+    code += "\nprint('LEAK', sorted(set(os.listdir(%r)) - before))\n" % xd
+    r = subprocess.run([sys.executable, '-c', code % (PKG, src)], env=env, capture_output=True, text=True, timeout=900)
+    assert 'LEAK []' in r.stdout, (r.stdout[-300:], r.stderr[-300:])

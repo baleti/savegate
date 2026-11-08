@@ -18,3 +18,21 @@ def test_no_cache_files_remain(tmp_path):
     assert r.returncode == 0, r.stderr[-500:]
     left = [os.path.basename(x) for x in glob.glob(str(c / '*'))]
     assert left == [], left
+
+SAVE_CODE = """
+import sys, os, shutil, tempfile
+sys.path.insert(0, %r); sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
+import savegate as sg, wledit
+SRC = %r
+d = tempfile.mkdtemp(); ed = wledit.Editor(SRC); ed.set_strings([(7, 'FillPattern.m_name', 'Cache probe')]); o = d + '/o.rfa'; ed.save(o); new = open(o, 'rb').read()
+for f in os.listdir(os.environ['RVT_CORE_CACHE']): os.remove(os.path.join(os.environ['RVT_CORE_CACHE'], f))      # drop what the editor itself wrote for the stable source path
+cur = d + '/c.rfa'; shutil.copy(SRC, cur)
+print(sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': ['stream:Partitions/67', 'el:7']}).ok)
+"""
+def test_full_gated_save_leaves_no_cache_files(tmp_path):
+    src = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
+    if not os.path.exists(src): pytest.skip('no sample')
+    c = tmp_path / 'core'; c.mkdir(); env = dict(os.environ); env['RVT_CORE_CACHE'] = str(c)
+    r = subprocess.run([sys.executable, '-c', SAVE_CODE % (PKG, src)], env=env, capture_output=True, text=True, timeout=600)
+    assert r.stdout.strip().endswith('True'), r.stderr[-400:]
+    assert os.listdir(str(c)) == [], os.listdir(str(c))

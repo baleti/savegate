@@ -919,6 +919,16 @@ class RvtAdapter:
         w += getattr(self, '_tail_notes', [])
         return w
 
+    @staticmethod
+    def _cnt_rel_broken(ga, gb, off, ma, mb, counts_may_change=False):
+        """frame fields x1=u32@off (record count) and x2=u32@off+8: with x1 unchanged x2 must move by exactly the change of the member's inflated length (measured: +120 for +120 bytes);
+        x1 may change only for declared added/deleted elements"""
+        import struct
+        x1a, x2a = struct.unpack_from('<I', ga, off)[0], struct.unpack_from('<I', ga, off + 8)[0]
+        x1b, x2b = struct.unpack_from('<I', gb, off)[0], struct.unpack_from('<I', gb, off + 8)[0]
+        if x1a != x1b: return not counts_may_change
+        return x2b - x2a != len(mb['raw']) - len(ma['raw'])
+
     def _framing_checks(self, manifest):
         """c4x-rvtgap (t317/t318): the bytes of a partition stream OUTSIDE the gzip members (44-byte header, 32-byte frame between members, tail after the last member) were not compared at all
         (625 of 701 single-bit flips with valid ECC were accepted in the 2026 family). Rule: member count equal; header identical except its size fields [24:36]; every frame identical to the
@@ -927,6 +937,7 @@ class RvtAdapter:
         h = getattr(self, '_buf_hist', [])
         if len(h) < 2 or not h[0] or not h[1]: return []
         bad = []
+        cm = bool(manifest.get('added') or manifest.get('deleted'))
         try:
             import struct, cfb, rvtw, wlpart
             def parts(b):
@@ -943,15 +954,22 @@ class RvtAdapter:
             if n not in B: continue
             a, b = A[n], B[n]
             if a.n != b.n: bad.append(('framing_changed', '%s: member count %d -> %d' % (n, a.n, b.n))); continue
-            if len(a.hdr) != len(b.hdr) or any(x != y for i, (x, y) in enumerate(zip(a.hdr, b.hdr)) if not 24 <= i < 36):
+            if len(a.hdr) != len(b.hdr) or any(x != y for i, (x, y) in enumerate(zip(a.hdr, b.hdr)) if not (24 <= i < 36 or (cm and 14 <= i < 18))):
                 bad.append(('framing_changed', '%s: partition header bytes outside the size fields differ' % n)); continue
+            nd = len(manifest.get('added', ())) + len(manifest.get('deleted', ()))
+            if abs(struct.unpack_from('<I', b.hdr, 14)[0] - struct.unpack_from('<I', a.hdr, 14)[0]) > nd:
+                bad.append(('framing_changed', '%s: partition header element count changed by more than the declared adds/deletes' % n)); continue
+            if self._cnt_rel_broken(a.hdr, b.hdr, 24, a.mem[0], b.mem[0], cm):
+                bad.append(('framing_changed', '%s: partition header record-count/size fields inconsistent with member 0' % n)); continue
             for k in range(len(a.gaps)):
                 ga, gb = a.gaps[k], b.gaps[k]
                 if len(ga) != len(gb): bad.append(('framing_changed', '%s: frame %d length %d -> %d' % (n, k, len(ga), len(gb)))); break
-                free = set(range(2, 6)) | set(range(16, 24))
+                free = set(range(2, 6)) | set(range(12, 24))
                 if any(x != y for i, (x, y) in enumerate(zip(ga, gb)) if i not in free):
                     bad.append(('framing_changed', '%s: frame %d (bytes between gzip members) differs outside the size fields' % (n, k))); break
                 if len(gb) >= 24:
+                    if self._cnt_rel_broken(ga, gb, 12, a.mem[k + 1], b.mem[k + 1], cm):
+                        bad.append(('framing_changed', '%s: frame %d record-count/size fields inconsistent with the member they describe' % (n, k))); break
                     own = b.mem[k]['end'] - b.mem[k]['pos']; nxt = b.mem[k + 1]['end'] - b.mem[k + 1]['pos']
                     sa_own = struct.unpack_from('<I', ga, 2)[0] == a.mem[k]['end'] - a.mem[k]['pos'] + 8
                     sa_nxt = struct.unpack_from('<I', ga, 16)[0] == a.mem[k + 1]['end'] - a.mem[k + 1]['pos'] + 8

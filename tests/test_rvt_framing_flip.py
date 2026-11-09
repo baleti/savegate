@@ -60,3 +60,20 @@ def test_equivalent_deflate_bitflip_refused(tmp_path, year):
     with pytest.raises(Exception):
         sg.save(sg.open_doc(cur, None, cfg), open(m, 'rb').read(), decl)
     assert open(cur, 'rb').read() == open(src, 'rb').read()
+@pytest.mark.parametrize('year', ['2024', '2026'])
+def test_directory_timestamp_flip_refused(tmp_path, year):
+    """c4x-rvtgap 325: creation/modified FILETIME bytes of a CFB directory entry (offsets 100..115) were accepted; the writer preserves them, so a change is refused"""
+    import savegate as sg, wledit, struct
+    from test_rvt_last_record_string_edit import _last_string_records
+    src = SRC % year
+    if not os.path.exists(src): pytest.skip('no public sample')
+    cfg = sg.Config(allow_overwrite=True, require_gate=False)
+    q, eid, fn, old, pn = _last_string_records(wledit.Editor(src), 1)[0]
+    ed = wledit.Editor(src); ed.set_strings([(eid, fn, 'Q')]); o = str(tmp_path / 'o.rfa'); ed.save(o); good = bytearray(open(o, 'rb').read())
+    ss = 1 << struct.unpack_from('<H', good, 30)[0]; base = ss * (struct.unpack_from('<I', good, 48)[0] + 1)
+    for po in (base + 100, base + 108, base + 115, base + 128 * 2 + 104):
+        b = bytearray(good); b[po] ^= 1
+        cur = str(tmp_path / 'c.rfa'); shutil.copy(src, cur)
+        with pytest.raises(Exception):
+            sg.save(sg.open_doc(cur, None, cfg), bytes(b), {'modified': ['stream:' + pn, 'el:%d' % eid]})
+        assert open(cur, 'rb').read() == open(src, 'rb').read()

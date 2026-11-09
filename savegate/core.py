@@ -200,7 +200,21 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
         try: os.remove(long_path(tmp))
         except OSError: pass
         raise
-    h = _finish_check(dest, new_bytes)
+    try: h = _finish_check(dest, new_bytes)
+    except DiskError as e:      # c4x-rvtgap: same rule as save(): never leave a destination that does not hold the verified bytes
+        if backup is None:
+            try: os.remove(long_path(dest)); gone = 'the damaged new file was removed'
+            except OSError as e2: gone = 'the damaged new file could NOT be removed (%s)' % e2
+            raise DiskError('%s; %s' % (e, gone)) from e
+        try:
+            with open(long_path(backup), 'rb') as bf: prev = bf.read()
+            from .backup import verify_backup
+            if not verify_backup(backup): raise DiskError('backup %s fails its recorded hash' % backup)
+            tmp2 = atomic.write_temp(dest, prev); atomic.commit_temp(tmp2, dest)
+            ok = sha256_file(dest) == hashlib.sha256(prev).hexdigest()
+        except Exception as e2:
+            raise DiskError('%s; automatic restore of the old destination from %s FAILED (%s)' % (e, backup, e2)) from e
+        raise DiskError('%s; the old destination was %s from %s' % (e, 'restored' if ok else 'NOT restored correctly', backup)) from e
     if doc.journal: doc.journal.log('save_as_done', dest=dest, sha256=h)
     return SaveResult(True, dest, backup, len(new_bytes), h, rep, time.time() - t0, doc.version)
 

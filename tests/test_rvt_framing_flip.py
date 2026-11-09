@@ -16,7 +16,7 @@ def test_framing_flip_refused_legit_edit_accepted(tmp_path, year):
     cur = str(tmp_path / 'ok.rfa'); shutil.copy(src, cur)
     assert sg.save(sg.open_doc(cur, None, cfg), good, decl).ok
     c0 = cfb.CFB(good); st0 = rvtw.Stream(bytes(c0.streams()[pn].data)); p0 = bytes(st0.payload); P = wlpart.Partition(st0)
-    offs = [0, 12, 30, P.mem[0]['end'], P.mem[0]['end'] + 8, P.mem[0]['end'] + 12, P.mem[3]['end'] + 24, P.mem[3]['end'] + 31, P.mem[P.n - 1]['end'], P.mem[P.n - 1]['end'] + 12]
+    offs = [P.mem[0]['pos'] + 4, P.mem[2]['pos'] + 8, P.mem[5]['pos'] + 9, 0, 12, 30, P.mem[0]['end'], P.mem[0]['end'] + 8, P.mem[0]['end'] + 12, P.mem[3]['end'] + 24, P.mem[3]['end'] + 31, P.mem[P.n - 1]['end'], P.mem[P.n - 1]['end'] + 12]
     for po in offs:
         c = cfb.CFB(good)
         for x in c.entries:

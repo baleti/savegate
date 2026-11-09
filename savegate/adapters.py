@@ -957,6 +957,8 @@ class RvtAdapter:
             if len(a.hdr) != len(b.hdr) or any(x != y for i, (x, y) in enumerate(zip(a.hdr, b.hdr)) if not (24 <= i < 36 or (cm and 14 <= i < 18))):
                 bad.append(('framing_changed', '%s: partition header bytes outside the size fields differ' % n)); continue
             nd = len(manifest.get('added', ())) + len(manifest.get('deleted', ()))
+            if any(a.mem[k]['gzhdr'] != b.mem[k]['gzhdr'] for k in range(a.n)):
+                bad.append(('framing_changed', '%s: a gzip member header (magic, flags, mtime, xfl, os) differs from the source' % n)); continue
             if abs(struct.unpack_from('<I', b.hdr, 14)[0] - struct.unpack_from('<I', a.hdr, 14)[0]) > nd:
                 bad.append(('framing_changed', '%s: partition header element count changed by more than the declared adds/deletes' % n)); continue
             if self._cnt_rel_broken(a.hdr, b.hdr, 24, a.mem[0], b.mem[0], cm):

@@ -25,7 +25,7 @@ def test_restore_refuses_while_another_saver_holds_the_lock(tmp_path):
 @pytest.mark.parametrize('err', [PermissionError(errno.EACCES, 'denied'), OSError(errno.EXDEV, 'cross-device')])
 def test_failing_replace_is_a_diskerror_without_litter(tmp_path, monkeypatch, err):
     p = _edited(tmp_path)
-    def bad(tmp, dest): raise err
+    def bad(tmp, dest, **kw): raise err
     monkeypatch.setattr(backup, 'commit_temp', bad)
     with pytest.raises(DiskError): sg.restore(p, len(sg.list_backups(p)) - 1)
     assert open(p, 'rb').read() == b'EDITED'

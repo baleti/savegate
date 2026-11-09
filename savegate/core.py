@@ -189,7 +189,7 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
     try:
         if os.path.exists(long_path(dest)):
             backup = make_backup(dest, doc.cfg.backup_keep, doc.cfg.backup_max_bytes)
-            atomic.commit_temp(tmp, dest)
+            atomic.commit_temp(tmp, dest, copy_mode_from=dest, keep_readonly=doc.cfg.allow_readonly)      # c4x-rvtgap: keep the old destination's mode/owner/xattrs
         else:
             atomic.link_new(tmp, dest)
     except FileExistsError:
@@ -210,7 +210,7 @@ def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
             with open(long_path(backup), 'rb') as bf: prev = bf.read()
             from .backup import verify_backup
             if not verify_backup(backup): raise DiskError('backup %s fails its recorded hash' % backup)
-            tmp2 = atomic.write_temp(dest, prev); atomic.commit_temp(tmp2, dest)
+            tmp2 = atomic.write_temp(dest, prev); atomic.commit_temp(tmp2, dest, copy_mode_from=dest, keep_readonly=doc.cfg.allow_readonly)
             ok = sha256_file(dest) == hashlib.sha256(prev).hexdigest()
         except Exception as e2:
             raise DiskError('%s; automatic restore of the old destination from %s FAILED (%s)' % (e, backup, e2)) from e

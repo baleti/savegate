@@ -145,9 +145,12 @@ def restore(path, which=None):
     try: tmp = write_temp(path, data)
     except OSError as e:      # c5x-rvtread2: a full or unwritable volume surfaced as a raw OSError; the file is untouched (the temp is removed by write_temp)
         raise DiskError('cannot write the restored copy next to %s: %s; the file was not touched, the backup %s is intact' % (path, e, use)) from e
-    try: commit_temp(tmp, path)
+    try: commit_temp(tmp, path, copy_mode_from=path, keep_readonly=True)      # c4x-rvtgap: the restored file keeps the mode/owner/xattrs of the file it replaces
     except OSError as e:      # c5x-rvtread2: a failing replace left the temp file behind and surfaced as a raw OSError
         try: os.remove(long_path(tmp))
         except OSError: pass
         raise DiskError('cannot replace %s with the restored copy: %s; the file was not touched, the backup %s is intact' % (path, e, use)) from e
+    import hashlib
+    if sha256_file(path) != hashlib.sha256(data).hexdigest():      # c4x-rvtgap: the restore was never read back; a bad rename/disk would report success on a wrong file
+        raise DiskError('%s does not hold the restored bytes after the replace (filesystem problem); the file it replaced is kept as the newest backup, the chosen backup %s is intact' % (path, use))
     return use

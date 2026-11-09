@@ -2,7 +2,7 @@
 grow by a whole ECC page (~63 KB of zero tail) although the gzip members got smaller. Valid per the gate, but unexplained bloat (oracle request 244). xfail until the writer owner explains/fixes."""
 import os, sys, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
-@pytest.mark.xfail(strict=False, reason='c4x-rvtgap 245: page-rounding bloat in chained edits, writer owner')
+@pytest.mark.xfail(strict=False, reason='by design wledit.save FULLPAD (c4x-rvtgap 247): compressed payload outgrew last-page capacity 1568 -> one full 65249 B page added')
 @pytest.mark.parametrize('yr', ['2024', '2026'])
 def test_two_chained_edits_do_not_add_a_page(tmp_path, yr):
     import wledit

@@ -919,6 +919,50 @@ class RvtAdapter:
         w += getattr(self, '_tail_notes', [])
         return w
 
+    def _framing_checks(self, manifest):
+        """c4x-rvtgap (t317/t318): the bytes of a partition stream OUTSIDE the gzip members (44-byte header, 32-byte frame between members, tail after the last member) were not compared at all
+        (625 of 701 single-bit flips with valid ECC were accepted in the 2026 family). Rule: member count equal; header identical except its size fields [24:36]; every frame identical to the
+        source except the derived fields [2:6] (own compressed size + 8, must hold in the output), [16:20] (next compressed size + 8, must hold) and [20:24]; the tail identical over the common
+        length and the length difference all zero (the writer pads the last page)."""
+        h = getattr(self, '_buf_hist', [])
+        if len(h) < 2 or not h[0] or not h[1]: return []
+        bad = []
+        try:
+            import struct, cfb, rvtw, wlpart
+            def parts(b):
+                r = {}
+                for n, e in cfb.CFB(bytes(b)).streams().items():
+                    if not n.startswith('Partitions/'): continue
+                    st = rvtw.Stream(e.data)
+                    if len(st.payload) < 40: continue
+                    r[n] = wlpart.Partition(st)
+                return r
+            A, B = parts(h[0]), parts(h[1])
+        except Exception: return []
+        for n in A:
+            if n not in B: continue
+            a, b = A[n], B[n]
+            if a.n != b.n: bad.append(('framing_changed', '%s: member count %d -> %d' % (n, a.n, b.n))); continue
+            if len(a.hdr) != len(b.hdr) or any(x != y for i, (x, y) in enumerate(zip(a.hdr, b.hdr)) if not 24 <= i < 36):
+                bad.append(('framing_changed', '%s: partition header bytes outside the size fields differ' % n)); continue
+            for k in range(len(a.gaps)):
+                ga, gb = a.gaps[k], b.gaps[k]
+                if len(ga) != len(gb): bad.append(('framing_changed', '%s: frame %d length %d -> %d' % (n, k, len(ga), len(gb)))); break
+                free = set(range(2, 6)) | set(range(16, 24))
+                if any(x != y for i, (x, y) in enumerate(zip(ga, gb)) if i not in free):
+                    bad.append(('framing_changed', '%s: frame %d (bytes between gzip members) differs outside the size fields' % (n, k))); break
+                if len(gb) >= 24:
+                    own = b.mem[k]['end'] - b.mem[k]['pos']; nxt = b.mem[k + 1]['end'] - b.mem[k + 1]['pos']
+                    sa_own = struct.unpack_from('<I', ga, 2)[0] == a.mem[k]['end'] - a.mem[k]['pos'] + 8
+                    sa_nxt = struct.unpack_from('<I', ga, 16)[0] == a.mem[k + 1]['end'] - a.mem[k + 1]['pos'] + 8
+                    if (sa_own and struct.unpack_from('<I', gb, 2)[0] != own + 8) or (sa_nxt and struct.unpack_from('<I', gb, 16)[0] != nxt + 8):
+                        bad.append(('framing_changed', '%s: frame %d size field does not match the member it describes' % (n, k))); break
+            else:
+                m = min(len(a.tail), len(b.tail))
+                if a.tail[:m] != b.tail[:m] or any(a.tail[m:]) or any(b.tail[m:]):
+                    bad.append(('framing_changed', '%s: tail after the last gzip member changed (%d -> %d bytes)' % (n, len(a.tail), len(b.tail))))
+        return bad
+
     def extra_checks(self, manifest):
         """c5x-rvtgap: the element view and the record checks do not see a bit flip in a record region they do not decode (23 of 25 random single-bit flips with valid ECC/CRC
         went unnoticed), so a declared edit may change only a few neighbouring gzip members of a partition (real edits: 1-3 adjacent members); anything wider is refused"""
@@ -929,6 +973,7 @@ class RvtAdapter:
         h = getattr(self, '_mem_hist', [])
         if len(h) < 2 or not h[0]: return []      # c4x-rvtgap: an EMPTY output map is no reason to skip (all partitions vanished)
         bad = self.span_checks(manifest)
+        bad += self._framing_checks(manifest)
         bad += self._delete_reference_checks(manifest)
         bad += self._nonfinite_checks(manifest)
         bad += self._dangling_ref_checks(manifest)

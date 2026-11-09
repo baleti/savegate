@@ -877,10 +877,46 @@ class RvtAdapter:
             keep.append((kind, k))
         return keep
 
+    def _tail_index_notes(self, manifest):
+        """c4x-rvtgap 291-296 (NOTE only, never a refusal): the element partitions of 2024-2026 families carry an index of 22-byte entries '<tag> 02 00 00 00 <element id u64> <9 descriptor bytes>'
+        after the records. Revit's use of it is unproven. If an element is declared deleted and its entry is still there, or elements are added and no entry was added, say so in
+        the report ('weakened') instead of passing silently."""
+        self._tail_notes = []
+        dele, add = [], []
+        for kind, lst in (('deleted', dele), ('added', add)):
+            for k in manifest.get(kind, ()):
+                try: lst.append(int(str(k).split(':')[-1]))
+                except ValueError: pass
+        h = getattr(self, '_buf_hist', [])
+        if not (dele or add) or len(h) < 2 or not h[0] or not h[1]: return
+        try:
+            import re, cfb, rvtw, wlpart
+            def blobs(b):
+                out = []
+                for k, e in cfb.CFB(bytes(b)).streams().items():
+                    if k.startswith('Partitions/'):
+                        P = wlpart.Partition(rvtw.Stream(e.data)); out.append(b''.join(bytes(m['raw']) for m in P.mem))
+                return out
+            A, B = blobs(h[0]), blobs(h[1])
+            def count(bl, i): 
+                pat = re.compile(b'[\\x00-\\x20]\\x02\\x00\\x00\\x00' + re.escape(i.to_bytes(8, 'little')))
+                return sum(len(pat.findall(x)) for x in bl)
+            for i in dele:
+                a, b = count(A, i), count(B, i)
+                if a and b >= a: self._tail_notes.append('el:%d was deleted but its 22-byte partition index entry is still present (Revit use of the index unproven)' % i)
+            if add:
+                gen = re.compile(b'[\\x00-\\x20]\\x02\\x00\\x00\\x00.{4}\\x00\\x00\\x00\\x00', re.S)
+                n_idx = sum(len(gen.findall(x)) for x in B)
+                if n_idx >= 100:       # an index exists in this file
+                    miss = [i for i in add if not count(B, i)]
+                    if miss: self._tail_notes.append('added element(s) %s have no entry in the 22-byte partition index (%d entry-like patterns); needed or not depends on the class, unproven for Revit' % (miss[:5], n_idx))
+        except Exception: pass
+
     def weakened(self):
         w = []
         if os.environ.get('SAVEGATE_RVT_IDCHECK', '1') == '0': w.append('SAVEGATE_RVT_IDCHECK=0: element id table check off')
         if not self.elements_fn: w.append('no element view: corrupted neighbour records with valid ECC/CRC are not detected')
+        w += getattr(self, '_tail_notes', [])
         return w
 
     def extra_checks(self, manifest):
@@ -898,6 +934,7 @@ class RvtAdapter:
         bad += self._dangling_ref_checks(manifest)
         bad += self._adler_checks(manifest)
         bad += self._byte_window_checks(manifest)
+        self._tail_index_notes(manifest)
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()

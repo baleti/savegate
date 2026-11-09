@@ -926,7 +926,7 @@ class RvtAdapter:
         import struct
         x1a, x2a = struct.unpack_from('<I', ga, off)[0], struct.unpack_from('<I', ga, off + 8)[0]
         x1b, x2b = struct.unpack_from('<I', gb, off)[0], struct.unpack_from('<I', gb, off + 8)[0]
-        if x1a != x1b: return not counts_may_change
+        if x1a != x1b: return not (counts_may_change or len(mb['raw']) != len(ma['raw']))      # records moved between members (wlpart re-cut of an over-long member): the partition-wide count is checked separately
         return x2b - x2a != len(mb['raw']) - len(ma['raw'])
 
     def _framing_checks(self, manifest):
@@ -961,6 +961,9 @@ class RvtAdapter:
                 bad.append(('framing_changed', '%s: partition header element count changed by more than the declared adds/deletes' % n)); continue
             if self._cnt_rel_broken(a.hdr, b.hdr, 24, a.mem[0], b.mem[0], cm):
                 bad.append(('framing_changed', '%s: partition header record-count/size fields inconsistent with member 0' % n)); continue
+            def _x1s(P): return sum(struct.unpack_from('<I', g, o)[0] for g, o in [(P.hdr, 24)] + [(g, 12) for g in P.gaps if len(g) >= 24])
+            if abs(_x1s(a) - _x1s(b)) > nd:
+                bad.append(('framing_changed', '%s: the sum of per-member record counts changed by more than the declared adds/deletes' % n)); continue
             for k in range(len(a.gaps)):
                 ga, gb = a.gaps[k], b.gaps[k]
                 if len(ga) != len(gb): bad.append(('framing_changed', '%s: frame %d length %d -> %d' % (n, k, len(ga), len(gb)))); break

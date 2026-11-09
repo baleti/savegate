@@ -172,6 +172,13 @@ def _check_writable_target(path, cfg):
 
 
 def _save_as(doc, new_bytes, dest, manifest, overwrite, verify):
+    if overwrite and os.path.abspath(dest) != doc.path and os.path.exists(long_path(os.path.abspath(dest))):
+        with Lock(os.path.abspath(dest)):      # c4x-rvtgap: replacing an existing file takes its lock like save()/restore() do (a save of that file in another process must not interleave)
+            return _save_as_locked(doc, new_bytes, dest, manifest, overwrite, verify)
+    return _save_as_locked(doc, new_bytes, dest, manifest, overwrite, verify)
+
+
+def _save_as_locked(doc, new_bytes, dest, manifest, overwrite, verify):
     t0 = time.time(); verify = doc.cfg.verify if verify is None else verify
     dest = os.path.abspath(dest)
     if overwrite and os.path.abspath(dest) != doc.path: _check_writable_target(dest, doc.cfg)

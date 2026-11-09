@@ -1,7 +1,7 @@
 """Versioned backups next to the file (<dir>/.savegate/), falling back to the user cache dir."""
 import re, os, sys, shutil, time, hashlib
 from .atomic import long_path, sha256_file, fsync_dir, full_fsync, write_temp, commit_temp
-from .errors import DiskError, SaveError, Conflict
+from .errors import DiskError, SaveError, Conflict, ReadOnlyTarget
 
 
 def _cache_dir():
@@ -130,9 +130,11 @@ def verify_backup(p):
     return len(tag) == 8 and sha256_file(p).startswith(tag)
 
 
-def restore(path, which=None):
+def restore(path, which=None, allow_readonly=False):
     """restore backup number `which` (0 = newest) over `path`, atomically; the current file is backed up first.
     Returns the backup path used."""
+    from .atomic import is_readonly
+    if not allow_readonly and os.path.exists(long_path(path)) and is_readonly(path): raise ReadOnlyTarget('%s is read-only: a restore replaces it like a save does; clear the flag or pass allow_readonly' % path)      # c4x-rvtgap
     bl = list_backups(path)
     if not bl: raise SaveError('no backup exists for %s' % path)
     which = which or 0

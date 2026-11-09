@@ -304,6 +304,6 @@ def _save(doc, new_bytes, manifest, force, verify):
     return SaveResult(True, doc.path, backup, len(new_bytes), h, rep, time.time() - t0, doc.version)
 
 
-def restore(path, which=None):
+def restore(path, which=None, allow_readonly=False):
     with Lock(path):      # c5x-rvtread2: restore overwrites the file like a save does; it ran without the lock and could replace a file another process was saving
-        return _restore(path, which)
+        return _restore(path, which, allow_readonly)

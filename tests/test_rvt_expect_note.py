@@ -21,3 +21,10 @@ def test_note_without_expect(tmp_path):
 
 def test_no_note_with_expect(tmp_path):
     r = _save(tmp_path, True); assert r.ok and 'without manifest[expect]' not in _weak(r)
+
+
+def test_strict_mode_refuses_without_expect(tmp_path, monkeypatch):
+    import savegate as sg
+    monkeypatch.setenv('SAVEGATE_RVT_REQUIRE_EXPECT', '1')
+    with pytest.raises(sg.VerifyFailed): _save(tmp_path, False)
+    assert _save(tmp_path, True).ok

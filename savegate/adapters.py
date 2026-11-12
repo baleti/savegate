@@ -1009,6 +1009,8 @@ class RvtAdapter:
         # c4x-rvtgap 346 (NOTE only): a declared element edit without manifest['expect'] is checked per element, not per field (raw modify can overwrite neighbour fields)
         if any(str(k).startswith('el:') for k in manifest.get('modified', ())) and not manifest.get('expect'):
             self._tail_notes.append('modified el: declared without manifest[expect]: the edit is verified per element, not per field (overlapping raw edits are not caught)')
+            if os.environ.get('SAVEGATE_RVT_REQUIRE_EXPECT', '0') == '1':      # opt-in strict mode (owner decision: default on for overwrite saves?)
+                bad.append(('expect_missing', 'SAVEGATE_RVT_REQUIRE_EXPECT=1: a modified el: needs manifest[expect] (field-level declaration)'))
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()

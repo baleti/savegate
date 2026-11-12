@@ -1,6 +1,7 @@
 """c4x-rvtgap: SIGKILL of a REAL RVT gated save (RvtAdapter, element view on) at each atomic step and during verification: target fully OLD or fully NEW, never partial; the next save works and leaves only file + .savegate; dead-pid scratch dirs get swept."""
 import os, sys, signal, subprocess, shutil, time, glob, pytest
 pytestmark = pytest.mark.skipif(sys.platform == 'win32', reason='POSIX SIGKILL')
+sys.path[:0] = [os.path.expanduser('~/rvt-research/write-lab'), os.path.expanduser('~/rvt-research')]
 F = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
 CHILD = '''
 import os, sys, signal, time

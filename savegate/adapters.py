@@ -1006,6 +1006,9 @@ class RvtAdapter:
         bad += self._adler_checks(manifest)
         bad += self._byte_window_checks(manifest)
         self._tail_index_notes(manifest)
+        # c4x-rvtgap 346 (NOTE only): a declared element edit without manifest['expect'] is checked per element, not per field (raw modify can overwrite neighbour fields)
+        if any(str(k).startswith('el:') for k in manifest.get('modified', ())) and not manifest.get('expect'):
+            self._tail_notes.append('modified el: declared without manifest[expect]: the edit is verified per element, not per field (overlapping raw edits are not caught)')
         uh = getattr(self, '_unres_hist', [])
         if len(uh) >= 2:
             decl = set()

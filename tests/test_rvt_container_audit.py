@@ -24,7 +24,7 @@ class ContainerAudit(unittest.TestCase):
         fat_sec = fats[s // (ss // 4)]; pos = (fat_sec + 1) * ss + 4 * (s % (ss // 4))
         m = bytearray(b); struct.pack_into('<I', m, pos, s)
         errs = a._damage(bytes(m))
-        self.assertTrue([x for x in errs if x.startswith('container chains')], errs)
+        self.assertTrue([x for x in errs if x.startswith(('container chains', 'container unreadable'))], errs)   # label changed when the loop is caught earlier (cycle -> unreadable); either way reported
 
 
 if __name__ == '__main__':

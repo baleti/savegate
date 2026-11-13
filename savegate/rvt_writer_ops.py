@@ -60,6 +60,10 @@ def _shift_leaders(T, rec, dx, dy):
 
 CASCADE_CLASSES = ('IndependentTag', 'BeamSystemTag', 'SpanDirectionSymbol')      # annotations that Revit deletes together with their host
 
+# c5x-rvtgap 83: delete_cascade is fail-closed on the TARGET class. The planner only sees id references, so it also accepted styles, view types, materials, patterns and phase filters,
+# which Revit may rely on through non-id relations. Only user-content classes are allowed until a Revit verdict clears more (extend this tuple, with a test, after oracle evidence).
+DELETE_TARGET_CLASSES = ('TextNote', 'IndependentTag', 'BeamSystemTag', 'SpanDirectionSymbol', 'FamilyInstance', 'ImageInstance', 'ParameterFilterElement', 'ExternalParamLock', 'RefPlane')
+
 
 def cascade_plan(src_path, tid):
     """ids to delete together with element tid: tid plus every referrer whose class is an annotation in CASCADE_CLASSES (closed transitively). Any other referrer (a joist system, a joined wall,
@@ -79,6 +83,7 @@ def cascade_plan(src_path, tid):
         o = set(); refs(r.get('fields'), o)
         for v in o:
             if v != eid: inb[v].add(eid)
+    if cls.get(int(tid)) not in DELETE_TARGET_CLASSES: raise ValueError('element %d is of class %s: deleting that class is not allowed (allowed: %s)' % (int(tid), cls.get(int(tid)), ', '.join(DELETE_TARGET_CLASSES)))
     todo = [int(tid)]; out = set()
     while todo:
         e = todo.pop()

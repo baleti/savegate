@@ -167,6 +167,17 @@ def run(src_path, ops, dst_path, check_source=True):
     return new_ids
 
 
+NOT_MOVABLE_SUFFIXES = ('Elem', 'Type', 'Attributes', 'Surrogate', 'Family', 'Plane')   # c5x-rvtgap 86: types, styles, sketch planes, categories: a move or clone of these is not an edit of placed content   # FamilySymbol stays allowed: existing chain tests move types of the Autodesk template (no placed instances there); unverified in Revit
+
+
+def _check_placed_class(src_path, eid, op):
+    clone = op in ('add_instance', 'add_element')     # cloning a type (FamilySymbol) is the duplicate-type case and stays allowed; a SketchPlane/Plane clone or any move of a type is refused
+    sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
+    c = {k[0]: k[1] for k in rvt_xcache.get_x_ro(src_path)['recs']}.get(int(eid))
+    if c is None or (c.endswith(('Plane',) if clone else NOT_MOVABLE_SUFFIXES) and c != 'RefPlane'):
+        raise ValueError('op %s: element %s is of class %s (a type, style, sketch plane or unknown record): not an element placed in the model, refused' % (op, eid, c))
+
+
 def _apply_ops(g, src_path, ops, new_ids):
     for o in ops:
         if o['op'] == 'delete': g.delete(int(o['id']))
@@ -179,8 +190,10 @@ def _apply_ops(g, src_path, ops, new_ids):
             ea, eb, _ = struct.unpack_from('<3I', et, 6 + 40 * best + 8); struct.pack_into('<3I', row, 8, ea, eb, eb)
             g.new.append((hdr, rec, item, nid)); g.rows.append(bytes(row)); g.nextid = nid + 1; new_ids.append(nid)
         elif o['op'] in ('move_instance', 'move_element'):
+            _check_placed_class(src_path, o['id'], o['op'])
             _move_instance(g, int(o['id']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0))))
         elif o['op'] in ('add_instance', 'add_element'):
+            _check_placed_class(src_path, o['template'], o['op'])
             if not any(float(o.get(k, 0)) for k in ('dx', 'dy', 'dz')): raise ValueError('op %s: an all-zero offset would put the copy exactly on top of element %s; give a non-zero dx/dy/dz' % (o['op'], o.get('template')))
             new_ids.append(_add_instance(g, int(o['template']), (float(o.get('dx', 0)), float(o.get('dy', 0)), float(o.get('dz', 0)))))
         elif o['op'] == 'set_instance_type':

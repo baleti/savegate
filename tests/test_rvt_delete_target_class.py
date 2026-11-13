@@ -12,3 +12,14 @@ def test_plain_delete_style_refused():
     tmp = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'tdc_plain.rte')
     for eid in (277690, 75785):
         with pytest.raises(ValueError, match='not allowed'): WO.run(SRC, [{'op': 'delete', 'id': eid}], tmp)
+
+def _first(cls_name):
+    import sys; sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
+    return next(k[0] for k in rvt_xcache.get_x_ro(SRC)['recs'] if k[1] == cls_name)
+
+@pytest.mark.parametrize('cls_name', ['SketchPlane', 'GStyleElem'])
+def test_move_and_clone_of_types_and_sketch_planes_refused(cls_name, tmp_path):
+    e = _first(cls_name)
+    with pytest.raises(ValueError, match='not an element placed'): WO.run(SRC, [{'op': 'move_element', 'id': e, 'dx': 1.0}], str(tmp_path / 'm.rte'))
+    if cls_name == 'SketchPlane':
+        with pytest.raises(ValueError, match='not an element placed'): WO.run(SRC, [{'op': 'add_element', 'template': e, 'dy': 3.0}], str(tmp_path / 'a.rte'))

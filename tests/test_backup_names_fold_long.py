@@ -33,3 +33,12 @@ def test_case_folding(tmp_path, monkeypatch, ci):
     pa = backup.make_backup(a, 5, None)
     found = [x[1] for x in backup.list_backups(str(tmp_path / 'model.RVT'))]
     assert (found == [pa]) if ci else (found == [])
+
+
+@pytest.mark.parametrize('ci', [False, True])
+def test_cache_store_key_folds_case(monkeypatch, ci):
+    """c7x-rvtread2 item 545: fallback (cache) store key must not depend on the spelling of the folder on a case-insensitive file system"""
+    monkeypatch.setattr(backup, '_CASE_INSENSITIVE', ci)
+    a = backup.backup_dirs('/tmp/Proj/Sub/m.rvt'); b = backup.backup_dirs('/tmp/proj/sub/M.RVT')
+    assert (a[1] == b[1]) == ci
+    assert a[-1] == backup.backup_dirs('/tmp/Proj/Sub/m.rvt')[-1]   # deterministic

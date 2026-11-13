@@ -13,7 +13,10 @@ def _cache_dir():
 
 def backup_dirs(path):
     d, n = os.path.split(os.path.abspath(path))
-    return [os.path.join(d, '.savegate'), os.path.join(_cache_dir(), hashlib.sha1(d.encode('utf-8', 'surrogatepass')).hexdigest()[:12])]
+    key = lambda x: os.path.join(_cache_dir(), hashlib.sha1(x.encode('utf-8', 'surrogatepass')).hexdigest()[:12])
+    out = [os.path.join(d, '.savegate'), key(_fold(d))]      # c7x-rvtread2 item 545: on a case-insensitive file system 'C:\\Proj' and 'c:\\proj' are one folder, so they must share the fallback store too
+    if _fold(d) != d: out.append(key(d))                      # the key older versions used (spelling as given): still searched, so earlier fallback backups are not orphaned
+    return out
 
 
 _CASE_INSENSITIVE = sys.platform in ('win32', 'darwin')      # c4x-rvtgap: 'Model.rvt' and 'model.RVT' are one file there; on Linux they are two and must NOT share backups (wrong-file restore)

@@ -23,3 +23,8 @@ def test_move_and_clone_of_types_and_sketch_planes_refused(cls_name, tmp_path):
     with pytest.raises(ValueError, match='not an element placed'): WO.run(SRC, [{'op': 'move_element', 'id': e, 'dx': 1.0}], str(tmp_path / 'm.rte'))
     if cls_name == 'SketchPlane':
         with pytest.raises(ValueError, match='not an element placed'): WO.run(SRC, [{'op': 'add_element', 'template': e, 'dy': 3.0}], str(tmp_path / 'a.rte'))
+
+@pytest.mark.parametrize('cls_name', ['LeaderStyle', 'Viewport', 'DBDrawing', 'SunAndShadowSettings', 'PropertySetElement'])
+def test_move_of_non_placed_classes_refused(cls_name, tmp_path):
+    e = _first(cls_name)
+    with pytest.raises(ValueError, match='not an element placed'): WO.run(SRC, [{'op': 'move_element', 'id': e, 'dx': 1.0}], str(tmp_path / 'm.rte'))

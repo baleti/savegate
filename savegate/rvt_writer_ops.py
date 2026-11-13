@@ -1,7 +1,8 @@
 """c5x-rvtgap: the trusted writer operations for RVT-EDIT rungs 2/3, built on the write lab's rvtgen.Gen (deterministic, Revit-validated in the lab). Used by the producer (the app) and by
 RvtAdapter.verify_writer_ops, which recomputes the result from the source and demands byte equality. ops = [{'op': 'delete', 'id': N},
 {'op': 'add_textnote', 'template': TID, 'x': .., 'y': .., 'text': '..'}, ...]; run() returns the list of new element ids."""
-import os, re, sys, struct
+import re
+import os, sys, struct
 
 
 def _lab():
@@ -167,19 +168,18 @@ def run(src_path, ops, dst_path, check_source=True):
     return new_ids
 
 
-NOT_MOVABLE_SUFFIXES = ('Elem', 'Type', 'Attributes', 'Surrogate', 'Family', 'Plane')   # c5x-rvtgap 86: types, styles, sketch planes, categories: a move or clone of these is not an edit of placed content   # FamilySymbol stays allowed: existing chain tests move types of the Autodesk template (no placed instances there); unverified in Revit
-
-
-GROUP_CLASSES = ('ElementGroup', 'ElementGroupAssociation', 'GroupBase', 'AssemblyInstance')   # c7x-rvtread2 item 513: move_element on a public ElementGroup was accepted and patched 8 bytes only
+# c5x-rvtgap 91: POSITIVE allowlists (the item 86 denylist still let move_element shift view crops, dimension anchors and style offsets: 149 of 291 classes accepted).
+# FamilySymbol stays for the older chain tests on the Autodesk template (no placed instances there); unverified in Revit. ElementGroup is listed so that the group-specific refusals keep their own messages.
+MOVE_TARGET_CLASSES = ('FamilyInstance', 'SWall', 'Wall', 'Grid', 'Level', 'TextNote', 'ImageInstance', 'RefPlane', 'IndependentTag', 'FamilySymbol', 'ElementGroup')
+CLONE_TARGET_CLASSES = ('FamilyInstance', 'SWall', 'Wall', 'TextNote', 'ImageInstance', 'FamilySymbol', 'ElementGroup')
 
 
 def _check_placed_class(src_path, eid, op):
-    clone = op in ('add_instance', 'add_element')     # cloning a type (FamilySymbol) is the duplicate-type case and stays allowed; a SketchPlane/Plane clone or any move of a type is refused
     sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
     c = {k[0]: k[1] for k in rvt_xcache.get_x_ro(src_path)['recs']}.get(int(eid))
-    if c in GROUP_CLASSES: raise ValueError('op %s: element %s is of class %s (group / assembly): its members have their own records and would not follow, refused until a Revit verdict (c7x-rvtread2 item 514)' % (op, eid, c))
-    if c is None or (c.endswith(('Plane',) if clone else NOT_MOVABLE_SUFFIXES) and c != 'RefPlane'):
-        raise ValueError('op %s: element %s is of class %s (a type, style, sketch plane or unknown record): not an element placed in the model, refused' % (op, eid, c))
+    ok = CLONE_TARGET_CLASSES if op in ('add_instance', 'add_element') else MOVE_TARGET_CLASSES
+    if c not in ok:
+        raise ValueError('op %s: element %s is of class %s, not an element placed in the model that this op may edit (allowed: %s)' % (op, eid, c, ', '.join(ok)))
 
 
 def _find_key(x, key):
@@ -194,6 +194,9 @@ def _find_key(x, key):
             r = _find_key(v, key)
             if r is not None: return r
     return None
+
+
+GROUP_CLASSES = ('ElementGroup', 'ElementGroupAssociation', 'GroupBase', 'AssemblyInstance')   # c7x-rvtread2 items 513/515; self-contained so the guard does not depend on the move/clone allowlists
 
 
 def _group_guard(src_path, o):

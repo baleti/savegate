@@ -1,7 +1,7 @@
 """c5x-rvtgap: the trusted writer operations for RVT-EDIT rungs 2/3, built on the write lab's rvtgen.Gen (deterministic, Revit-validated in the lab). Used by the producer (the app) and by
 RvtAdapter.verify_writer_ops, which recomputes the result from the source and demands byte equality. ops = [{'op': 'delete', 'id': N},
 {'op': 'add_textnote', 'template': TID, 'x': .., 'y': .., 'text': '..'}, ...]; run() returns the list of new element ids."""
-import os, sys, struct
+import os, re, sys, struct
 
 
 def _lab():
@@ -203,10 +203,13 @@ def _group_guard(src_path, o):
     if o['op'] == 'delete_cascade' and ids: ids = sorted(set(ids) | set(cascade_plan(src_path, ids[0])))
     if not ids: return
     sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
-    recs = {k[0]: v for k, v in rvt_xcache.get_x_ro(src_path)['recs'].items()}
+    allrecs = rvt_xcache.get_x_ro(src_path)['recs']
+    recs = {k[0]: v for k, v in allrecs.items()}; cls = {k[0]: k[1] for k in allrecs}
     for i in ids:
+        if cls.get(i) in GROUP_CLASSES: raise ValueError('op %s: element %d is of class %s (group / assembly): its members have their own records and would not follow, refused until a Revit verdict (c7x-rvtread2 item 514)' % (o['op'], i, cls.get(i)))
         gid = _find_key((recs.get(i) or {}).get('fields', {}), 'm_groupId')
-        if gid is not None and 'EID(18446744073709551615)' != str(gid) and str(gid) not in ('0', '-1'):
+        m = re.match(r'EID\((\d+)\)', str(gid)) if gid is not None else None
+        if m and cls.get(int(m.group(1))) in GROUP_CLASSES:     # m_groupId of sketch curves / dimension strings names a VarSketch (not a group): only group classes count
             raise ValueError('op %s: element %d is a member of group %s: members cannot be edited alone (group not updated), refused' % (o['op'], i, gid))
 
 

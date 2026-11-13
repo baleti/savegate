@@ -20,3 +20,15 @@ def test_not_enabled_allowed():
 @pytest.mark.parametrize('v', ['Central', 'Local'])
 def test_workshared_refused(v):
     assert adapters.RvtAdapter().overwrite_risks(_patched(v))
+
+
+@pytest.mark.skipif(not os.path.exists(F), reason='public sample missing')
+@pytest.mark.parametrize('v', ['', 'Blank'])
+def test_missing_or_empty_field_fails_closed(v):
+    """c5x-rvtgap 67: an absent or empty Worksharing field must NOT read as 'not workshared'."""
+    cfb = pytest.importorskip('cfb'); c = cfb.CFB(open(F, 'rb').read()); e = c.streams()['BasicFileInfo']
+    a = 'Worksharing: ' + OLD
+    if v == '': e.data = e.data.replace('Worksharing:'.encode('utf-16le'), 'Workshar1ng:'.encode('utf-16le'), 1)
+    else: e.data = e.data.replace(a.encode('utf-16le'), ('Worksharing: ' + ' ' * len(OLD)).encode('utf-16le'), 1)
+    o = tempfile.mkdtemp() + '/w.rfa'; cfb.write(c, o)
+    assert adapters.RvtAdapter().overwrite_risks(open(o, 'rb').read())

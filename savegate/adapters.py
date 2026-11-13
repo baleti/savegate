@@ -675,9 +675,10 @@ class RvtAdapter:
         try: d = cfb.CFB(bytes(buf)).streams()['BasicFileInfo'].data
         except Exception: return []
         k = d.find('Worksharing:'.encode('utf-16le'))
-        if k < 0: return []
+        if k < 0: return ['BasicFileInfo has no Worksharing field: cannot rule out a workshared model, in-place overwrite refused, use SAVE AS']     # c5x-rvtgap 67: fail closed
         m = d[k + 24:k + 80].decode('utf-16le', 'ignore').strip().split('\r')[0].split('\n')[0].strip()
-        if m and not m.lower().startswith('not enabled'): return ['workshared model (Worksharing: %s): in-place overwrite refused, use SAVE AS or save from Revit' % m]
+        if not m: return ['BasicFileInfo Worksharing field is empty: cannot rule out a workshared model, in-place overwrite refused, use SAVE AS']
+        if not m.lower().startswith('not enabled'): return ['workshared model (Worksharing: %s): in-place overwrite refused, use SAVE AS or save from Revit' % m]
         return []
 
     def _damage(self, buf):

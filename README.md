@@ -7,6 +7,7 @@ Stdlib-only library that makes Save / Save As / overwrite of .dwg and .rvt files
 - concurrent-modification guard (size + mtime + hash at load) and a lock file
 - crash-recovery edit journal
 - verify hook: the output is re-parsed and diffed against the source; any difference outside the declared edit aborts the save and leaves the original untouched (DWG AC1015-AC1032, RVT streams / elements)
+- resource preflight: refused before any work (original untouched, nothing written) when a volume cannot hold the temp copy and backup (`DiskError`) or, for RVT, when free RAM (MemAvailable or cgroup headroom) is below 75x the file size (`LowMemory`, exit 6; measured need 50-70x, `SAVEGATE_MEM_FACTOR=0` skips the check)
 - oracle gate: overwrite stays closed per format+version until the matrix evidence file exists
 
 ```

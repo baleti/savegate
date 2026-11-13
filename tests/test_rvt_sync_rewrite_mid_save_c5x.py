@@ -3,13 +3,15 @@ import os, sys, shutil, hashlib, pytest
 import savegate as sg
 from savegate import core
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
-F = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
-pytestmark = pytest.mark.skipif(not os.path.exists(F), reason='no sample')
-MAN = {'modified': ['stream:Partitions/67', 'el:7']}
-def test_rewrite_after_backup_is_kept(tmp_path, monkeypatch):
+SAMPLES = [os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-%s.rfa' % y) for y in ('2024', '2026')]
+SAMPLES = [s for s in SAMPLES if os.path.exists(s)]
+pytestmark = pytest.mark.skipif(not SAMPLES, reason='no sample')
+@pytest.mark.parametrize('F', SAMPLES)
+def test_rewrite_after_backup_is_kept(tmp_path, monkeypatch, F):
     import wledit
     f = str(tmp_path / 'a.rfa'); shutil.copy(F, f)
     ed = wledit.Editor(f); ed.set_strings([(7, 'FillPattern.m_name', 'Sync probe')]); o = str(tmp_path / 'o.tmp'); ed.save(o); new = open(o, 'rb').read(); os.remove(o)
+    MAN = {'modified': ['stream:' + wledit.Editor(F).trace(7)[0], 'el:7']}
     doc = sg.open_doc(f, None, sg.Config(allow_overwrite=True, require_gate=False))
     foreign = bytearray(open(f, 'rb').read()); foreign[2000] ^= 0xFF; foreign = bytes(foreign)
     real = core.make_backup

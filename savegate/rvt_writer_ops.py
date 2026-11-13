@@ -170,10 +170,14 @@ def run(src_path, ops, dst_path, check_source=True):
 NOT_MOVABLE_SUFFIXES = ('Elem', 'Type', 'Attributes', 'Surrogate', 'Family', 'Plane')   # c5x-rvtgap 86: types, styles, sketch planes, categories: a move or clone of these is not an edit of placed content   # FamilySymbol stays allowed: existing chain tests move types of the Autodesk template (no placed instances there); unverified in Revit
 
 
+GROUP_CLASSES = ('ElementGroup', 'ElementGroupAssociation', 'GroupBase', 'AssemblyInstance')   # c7x-rvtread2 item 513: move_element on a public ElementGroup was accepted and patched 8 bytes only
+
+
 def _check_placed_class(src_path, eid, op):
     clone = op in ('add_instance', 'add_element')     # cloning a type (FamilySymbol) is the duplicate-type case and stays allowed; a SketchPlane/Plane clone or any move of a type is refused
     sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
     c = {k[0]: k[1] for k in rvt_xcache.get_x_ro(src_path)['recs']}.get(int(eid))
+    if c in GROUP_CLASSES: raise ValueError('op %s: element %s is of class %s (group / assembly): its members have their own records and would not follow, refused until a Revit verdict (c7x-rvtread2 item 514)' % (op, eid, c))
     if c is None or (c.endswith(('Plane',) if clone else NOT_MOVABLE_SUFFIXES) and c != 'RefPlane'):
         raise ValueError('op %s: element %s is of class %s (a type, style, sketch plane or unknown record): not an element placed in the model, refused' % (op, eid, c))
 

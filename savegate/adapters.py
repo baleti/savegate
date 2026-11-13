@@ -629,7 +629,9 @@ class RvtAdapter:
         except Exception: return None
         if 'BasicFileInfo' not in s or 'Global/ElemTable' not in s and 'Global/Latest' not in s: return None
         t = s['BasicFileInfo'].data.decode('utf-16le', 'ignore')
-        m = re.search(r'(20[12]\d)', t)
+        # c7x-rvtread2 579: the format year is the one right before the build stamp; the FIRST year-like string can be a server/folder name in the stored path
+        # (7.5 percent of 930 local files had a different first string; 15 genuine 2024 files read as 2019/2021/2022/2023/2025, and a 2022 file in a '...2024...' folder would read as writable)
+        m = re.search(r'(20[12]\d)[^0-9]{0,6}(?:\d_\d_)?20[12]\d\d{4}_\d{4}\(x\d\d\)', t) or re.search(r'(20[12]\d)', t)
         v = m.group(1) if m else '?'
         if v in RVT_WRITABLE:      # c7x-rvtread2 566: the year text alone can be spoofed; the build stamp (YYYYMMDD_HHMM(x64)) must agree (genuine files: build year in [year-2, year], 73/73 stamped corpus files)
             mb = re.search(r'(20[12]\d)\d{4}_\d{4}\(x\d\d\)', t)

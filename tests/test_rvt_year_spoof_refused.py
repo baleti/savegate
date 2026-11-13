@@ -21,3 +21,21 @@ def test_genuine_writable_years_still_accepted():
     fs = sorted(glob.glob(os.path.expanduser('~/rvt-research/corpus/2024/*.rvt')) + glob.glob(os.path.expanduser('~/rvt-research/corpus/2026/*.rvt')))
     assert fs
     for f in fs: RvtAdapter().sniff(open(f, 'rb').read())      # must not raise
+
+
+def _with_prefix(src, prefix, tmp_path):
+    import cfb
+    c = cfb.CFB(open(src, 'rb').read()); st = c.streams()['BasicFileInfo']
+    st.data = prefix.encode('utf-16le') + st.data
+    p = str(tmp_path / 'p.rvt'); cfb.write(c, p); return open(p, 'rb').read()
+
+def test_path_with_a_writable_year_in_front_does_not_make_an_old_file_writable(tmp_path):      # c7x-rvtread2 579
+    from savegate.adapters import RvtAdapter
+    from savegate.errors import UnsupportedVersion
+    Y22 = sorted(glob.glob(os.path.expanduser('~/rvt-research/corpus/2022/*.rvt')))
+    if not Y22: pytest.skip('no 2022 sample')
+    with pytest.raises(UnsupportedVersion): RvtAdapter().sniff(_with_prefix(Y22[0], '\\\\server2024\\projects\\2024\\', tmp_path))
+
+def test_path_with_an_old_year_in_front_does_not_make_a_2024_file_unwritable(tmp_path):
+    from savegate.adapters import RvtAdapter
+    RvtAdapter().sniff(_with_prefix(G[0], '\\\\srv2019\\jobs\\2021\\', tmp_path))      # must not raise

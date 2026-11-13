@@ -149,8 +149,11 @@ def _check_deleted_once(src_path, ops):
             gone.add(i)
 
 
-def run(src_path, ops, dst_path, check_source=True):
+def run(src_path, ops, dst_path, check_source=True, lab=False):
     _lab(); import rvtgen
+    if not lab:      # c7x-rvtread2 561: the writer is fitted and oracle-tested for the writable years only; other years would produce unverified files (the save path refuses them, the raw API did not)
+        from .adapters import RvtAdapter
+        with open(src_path, 'rb') as _f: RvtAdapter().sniff(_f.read())      # raises UnsupportedVersion
     if check_source:      # never write a new file from a damaged source (damage would be carried forward or hidden)
         from .adapters import RvtAdapter
         with open(src_path, 'rb') as _f: _d = RvtAdapter().source_damage(_f.read())

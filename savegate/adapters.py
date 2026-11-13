@@ -1113,6 +1113,11 @@ class RvtAdapter:
                     except Exception: old = []
                     for o in old:
                         if o in new_bad: new_bad.remove(o)
+                if sed is not None:      # c5x-rvtread2 item 175: a declared element must keep its ordered field structure (a raw write into a string-length / container-count prefix re-decodes to different fields)
+                    try:
+                        a = [x[1] for x in sed.trace(e)[3]]; b = [x[1] for x in ed.trace(e)[3]]
+                        if a != b: bad.append(('field_structure_changed', 'el:%d decodes to %d fields in the output versus %d in the source (count/length prefix damaged?)' % (e, len(b), len(a))))
+                    except Exception: pass
                 if new_bad: bad.append(('nonfinite_value', 'el:%d holds a NaN, infinite, huge or control-character value in the output' % e))
         except Exception as ex: bad.append(('nonfinite_unchecked', 'could not scan the declared elements for NaN/inf: %s' % ex))
         finally:

@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.ins
 F = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
 pytestmark = pytest.mark.skipif(not os.path.exists(F), reason='no sample')
 
-@pytest.mark.xfail(reason='gate checks scope, not field structure of a declared element', strict=False)
+
 def test_length_prefix_garbage_in_declared_element_is_refused(tmp_path):
     import wledit
     f = str(tmp_path / 'a.rfa'); shutil.copy(F, f); src = open(f, 'rb').read()

@@ -1423,7 +1423,10 @@ def _default_rvt_elements():
     if not os.path.isdir(rd): return None
     def fn(buf):
         from . import rvt_elements
-        return rvt_elements.elements(buf, with_geometry=False)
+        try: return rvt_elements.elements(buf, with_geometry=False)
+        finally:      # c5x-rvtread2 item 184: rvt_fast keeps one file's decoded records (~490 MB on a 22 MB project) per call; the gate reads source and output, so release it after each view
+            m = sys.modules.get('rvt_fast'); sh = getattr(m, '_SHARED', None)
+            if isinstance(sh, dict): sh.clear()
     return fn
 
 

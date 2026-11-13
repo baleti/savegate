@@ -1184,7 +1184,7 @@ class RvtAdapter:
         paths = []
         try:
             import numpy as np, cfb, rvtw, wlpart, rvt_scan as S, rvt_inventory as I
-            def amap(buf):
+            def amap(buf, only=None):
                 fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(buf)); os.close(fd); paths.append(p)
                 o, cls, ids = S.load(p); W = S.id_size(cls); hs = 12 + W; etags = I.element_tags(cls)
                 c = cfb.CFB(bytes(buf)); out = {}
@@ -1192,13 +1192,18 @@ class RvtAdapter:
                 for n, e in c.streams().items():
                     if not n.startswith('Partitions/'): continue
                     pt = wlpart.Partition(rvtw.Stream(e.data), hs=hs); bj = b''.join(bytes(m['raw']) for m in pt.mem)
+                    last = {}                      # out[(n, eid)] is overwritten by later candidates: only the last one per key counts, so checksum only that one
                     for i in S.header_candidates_tagged(bj, arr, W, etags):
                         i = int(i); L = struct.unpack_from('<I', bj, i + hs - 4)[0]
                         if L > len(bj) - i - hs or L < 2: continue
-                        eid = int.from_bytes(bj[i + 4:i + 4 + W], 'little'); st = struct.unpack_from('<I', bj, i + 4 + W)[0]
-                        out[(n, eid)] = (zlib.adler32(bj[i + 4 + W + 8:i + hs + L]) & 0xffffffff == st)
+                        eid = int.from_bytes(bj[i + 4:i + 4 + W], 'little')
+                        last[(n, eid)] = (i, L)
+                    for k, (i, L) in last.items():
+                        if only is not None and not only.get(k): continue   # the output only matters for records valid in the source
+                        st = struct.unpack_from('<I', bj, i + 4 + W)[0]
+                        out[k] = (zlib.adler32(bj[i + 4 + W + 8:i + hs + L]) & 0xffffffff == st)
                 return out
-            a = amap(h[0]); b = amap(h[1])
+            a = amap(h[0]); b = amap(h[1], only=a)
         except Exception as ex: return [('adler_unchecked', 'could not verify the record checksums of source and output: %s' % str(ex)[:150])]
         finally:
             for p in paths:

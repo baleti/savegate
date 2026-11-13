@@ -289,6 +289,14 @@ def _available_memory():
     return avail
 
 
+def _trim_heap():
+    """c5x item 251: hand freed heap pages back to the OS before the memory preflight (glibc keeps ~250 MB of freed decode buffers resident after an editor load; with malloc_trim the second gated save of the 22 MB project passes under a 2 GB cap instead of LowMemory). Best effort, Linux/glibc only."""
+    try:
+        import ctypes, gc
+        gc.collect(); ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception: pass
+
+
 def _preflight_memory(doc, new_bytes):
     """c5x-rvtread2 item 187: the gate decodes source and output of an RVT (measured peak 50-70x the file size (single decode 35-48x, x1.43 for the whole save): 22 MB -> 1.24 GB, 26 MB est. 1.8 GB; a 51 MB project was OOM-killed at 2 GB).
     Refuse up front, with a clear message, when the free RAM is clearly below 75x the file size, instead of dying midway (the original stays intact either way, but leaves a temp copy
@@ -310,6 +318,7 @@ def _save(doc, new_bytes, manifest, force, verify):
         raise GateClosed('overwrite of %s %s is not enabled: the oracle test matrix is not green' % (fmt, doc.version))
     _check_writable_target(doc.path, cfg)
     _preflight_space(doc, new_bytes)
+    _trim_heap()
     _preflight_memory(doc, new_bytes)
     if hasattr(doc.adapter, 'source_damage'):
         dm = doc.adapter.source_damage(doc.buf)

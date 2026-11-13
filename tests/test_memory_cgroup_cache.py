@@ -10,3 +10,8 @@ def test_parse_reclaimable_sums_file_cache():
 def test_parse_reclaimable_missing_or_garbage():
     assert _parse_reclaimable('') == 0
     assert _parse_reclaimable('inactive_file x\nactive_file\n') == 0
+
+
+def test_trim_heap_never_raises():
+    from savegate.core import _trim_heap
+    _trim_heap()

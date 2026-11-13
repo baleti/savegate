@@ -58,3 +58,11 @@ def test_flip_in_header_of_a_record_without_valid_adler_is_refused(tmp_path):
     """the case that really escaped: byte 13 of the 22-byte header of element 1 (one of ~13 records whose checksum is not an Adler32 of the assumed span), 1 KB before the edit"""
     ok, cur, before = _save(tmp_path, _out(tmp_path, True, fixed=440497))
     assert not ok and open(cur, 'rb').read() == before
+
+
+@pytest.mark.parametrize('off', [686424, 734675, 744775, 903941, 958725])
+def test_flip_in_checksum_of_a_record_whose_element_id_has_several_header_candidates_is_refused(tmp_path, off):
+    """c5x item 205: for these element ids the header scan finds several candidates (phantoms or a stale copy); the Adler rule keeps only the last per id, so the
+    first (real) record is not covered by that rule alone. The gate as a whole must still refuse (byte-window rule)."""
+    ok, cur, before = _save(tmp_path, _out(tmp_path, True, fixed=off))
+    assert not ok and open(cur, 'rb').read() == before

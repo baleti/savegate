@@ -614,6 +614,32 @@ def _plain_damage(n, d):
     return []
 
 
+def _dir_pinned_bytes(b):
+    """c5x-rvtgap 91: directory/header bytes a save passes through unchanged that are constant in practice (89 Autodesk files and 6793 local real files: 0 deviations): header CLSID zero,
+    entry CLSID zero, state bits zero, colour 0/1, root entry siblings NOSTREAM. A non-conforming value is damage the audit does not see."""
+    import struct
+    try:
+        if b[:8] != b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1': return []
+        out = []
+        if b[8:24] != bytes(16): out.append('container header CLSID is not zero')
+        ss = 1 << struct.unpack_from('<H', b, 30)[0]; sec = struct.unpack_from('<I', b, 48)[0]
+        import olefile
+        fat = olefile.OleFileIO(b).fat; seen = set(); first = True
+        while sec < 0xFFFFFFFA and sec not in seen and sec < len(fat) and (sec + 2) * ss <= len(b):
+            seen.add(sec); blk = b[(sec + 1) * ss:(sec + 2) * ss]
+            for i in range(ss // 128):
+                e = blk[i * 128:(i + 1) * 128]
+                if e[66] == 0: continue
+                if e[80:96] != bytes(16): out.append('directory entry CLSID is not zero')
+                if e[96:100] != bytes(4): out.append('directory entry state bits are not zero')
+                if e[67] not in (0, 1): out.append('directory entry colour is not 0/1')
+                if first and i == 0 and struct.unpack_from('<II', e, 68) != (0xFFFFFFFF, 0xFFFFFFFF): out.append('root entry siblings are not NOSTREAM')
+            first = False; sec = fat[sec]
+        return sorted(set(out))
+    except Exception:
+        return []
+
+
 class RvtAdapter:
     name = 'rvt'
     def __init__(self, lib=None, elements_fn=None):
@@ -694,6 +720,12 @@ class RvtAdapter:
         errs = []
         try: S = cfb.CFB(bytes(buf)).streams()
         except Exception as ex: return ['container unreadable: %s' % ex]
+        _ok = {'BasicFileInfo', 'Contents', 'Formats/Latest', 'Global/ContentDocuments', 'Global/DocumentIncrementTable', 'Global/ElemTable', 'Global/History', 'Global/Latest',
+               'Global/PartitionTable', 'RevitPreview4.0', 'TransmissionData', 'ProjectInformation', 'PartAtom', '\x05DocumentSummaryInformation', 'SteelModelIncrements', 'Indexes'}
+        for n in S:        # c5x-rvtgap 90: a renamed stream was carried through a save; closed name set (89 Autodesk files + 6792 local real files: 0 outside)
+            if n in _ok or (n.startswith('Partitions/') and n[11:].isdigit()) or n.startswith('SteelModelIncrements/') or n.startswith('Indexes/'): continue
+            errs.append('unknown stream name %r (renamed or foreign stream)' % n)
+        errs.extend(_dir_pinned_bytes(bytes(buf)))      # c5x-rvtgap 91
         try:
             import rvt_integrity       # c4x-dwgreadfuzz 190: FAT/miniFAT loops, DIFAT, directory tree: olefile-style readers accept these silently
             errs.extend('container %s: %s' % x for x in rvt_integrity.audit(bytes(buf)))

@@ -133,7 +133,11 @@ def _check_deleted_once(src_path, ops):
         if o['op'] in MODIFY_OPS:
             if int(o['id']) in modified: raise ValueError('element %d is modified twice in one run (%s): edits of one element do not compose (the last one silently wins, item 395); combine them into one op or save twice' % (int(o['id']), o['op']))
             modified.add(int(o['id']))
-        if o['op'] == 'delete': ids = [int(o['id'])]
+        if o['op'] == 'delete':
+            ids = [int(o['id'])]
+            sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache      # c5x-rvtgap 85: the plain delete obeys the same target-class allowlist as delete_cascade
+            c = {k[0]: k[1] for k in rvt_xcache.get_x_ro(src_path)['recs']}.get(ids[0])
+            if c not in DELETE_TARGET_CLASSES: raise ValueError('element %d is of class %s: deleting that class is not allowed (allowed: %s)' % (ids[0], c, ', '.join(DELETE_TARGET_CLASSES)))
         elif o['op'] == 'delete_cascade': ids = cascade_plan(src_path, int(o['id']))
         else:
             for k in ('id', 'template'):

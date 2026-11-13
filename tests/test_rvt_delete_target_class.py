@@ -7,3 +7,8 @@ pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='sample missing'
 def test_style_delete_refused():
     for eid in (277690, 75785):      # GStyleElem, unreferenced
         with pytest.raises(ValueError, match='not allowed'): WO.cascade_plan(SRC, eid)
+
+def test_plain_delete_style_refused():
+    tmp = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'tdc_plain.rte')
+    for eid in (277690, 75785):
+        with pytest.raises(ValueError, match='not allowed'): WO.run(SRC, [{'op': 'delete', 'id': eid}], tmp)

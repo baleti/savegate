@@ -255,6 +255,22 @@ def _preflight_space(doc, new_bytes):
         if free < need: raise DiskError('not enough free space in %s (%s): %d MB free, %d MB needed; nothing was written, the original is untouched' % (what, d, free >> 20, need >> 20))
 
 
+def _parse_reclaimable(text):
+    """inactive_file + active_file of a cgroup v2 memory.stat text (bytes of page cache the kernel can drop); 0 when absent"""
+    t = 0
+    for l in text.splitlines():
+        k, _, v = l.partition(' ')
+        if k in ('inactive_file', 'active_file'):
+            try: t += int(v)
+            except ValueError: pass
+    return t
+
+
+def _reclaimable_cache(base):
+    try: return _parse_reclaimable(open(base + '/memory.stat').read())
+    except OSError: return 0
+
+
 def _available_memory():
     """bytes of RAM this process can still use: MemAvailable, lowered by a cgroup limit when one applies; None when unknown"""
     avail = None
@@ -267,7 +283,7 @@ def _available_memory():
         base = '/sys/fs/cgroup' + cg
         mx = open(base + '/memory.max').read().strip()
         if mx != 'max':
-            left = int(mx) - int(open(base + '/memory.current').read().strip())
+            left = int(mx) - int(open(base + '/memory.current').read().strip()) + _reclaimable_cache(base)      # c5x item 251: page cache counts in memory.current but the kernel reclaims it on demand (like MemAvailable)
             avail = left if avail is None else min(avail, left)
     except (OSError, ValueError): pass
     return avail

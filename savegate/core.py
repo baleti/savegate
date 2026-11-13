@@ -274,11 +274,11 @@ def _available_memory():
 
 
 def _preflight_memory(doc, new_bytes):
-    """c5x-rvtread2 item 187: the gate decodes source and output of an RVT (measured peak about 56x the file size: 22 MB -> 1.24 GB; a 51 MB project was OOM-killed at 2 GB).
-    Refuse up front, with a clear message, when the free RAM is clearly below 60x the file size, instead of dying midway (the original stays intact either way, but leaves a temp copy
+    """c5x-rvtread2 item 187: the gate decodes source and output of an RVT (measured peak 50-70x the file size (single decode 35-48x, x1.43 for the whole save): 22 MB -> 1.24 GB, 26 MB est. 1.8 GB; a 51 MB project was OOM-killed at 2 GB).
+    Refuse up front, with a clear message, when the free RAM is clearly below 75x the file size, instead of dying midway (the original stays intact either way, but leaves a temp copy
     and no explanation). SAVEGATE_MEM_FACTOR=0 disables the check; unknown free memory skips it. RVT only (OLE header)."""
-    try: f = float(os.environ.get('SAVEGATE_MEM_FACTOR', '60'))
-    except ValueError: f = 60.0
+    try: f = float(os.environ.get('SAVEGATE_MEM_FACTOR', '75'))
+    except ValueError: f = 75.0
     if f <= 0 or bytes(doc.buf[:4]) != b'\xd0\xcf\x11\xe0': return
     need = int(f * max(len(new_bytes), len(doc.buf))); avail = _available_memory()
     if avail is not None and avail < need:

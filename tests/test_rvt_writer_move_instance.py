@@ -5,7 +5,7 @@ import os, sys, struct, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/corpus/2024/43_Snowdon_Towers_Sample_Structural.rvt'); EL = 730441
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk sample')
-OPS = [{'op': 'move_instance', 'id': EL, 'dx': 1.0}]
+OPS = [{'op': 'move_instance', 'allow_dependents': True, 'id': EL, 'dx': 1.0}]
 
 
 def _make(tmp_path):

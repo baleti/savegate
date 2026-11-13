@@ -6,13 +6,13 @@ sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.ins
 SRC = os.path.expanduser('~/rvt-research/corpus/2026/55_Snowdon_Towers_Sample_Structural.rvt')
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk 2026 sample')
 OPS = {
-    'move_wall': [{'op': 'move_element', 'id': 585072, 'dy': 1.0}],
-    'move_grid': [{'op': 'move_element', 'id': 578141, 'dx': 1.0}],
-    'move_level': [{'op': 'move_element', 'id': 32567, 'dz': 1.0}],
-    'move_instance': [{'op': 'move_instance', 'id': 730441, 'dx': 1.0}],
-    'rotate_instance': [{'op': 'rotate_instance', 'id': 730441, 'deg': 90.0}],
-    'wall_height': [{'op': 'resize_wall', 'id': 585072, 'height': 60.0}],
-    'wall_length': [{'op': 'resize_wall', 'id': 585072, 'length_delta': 2.0}],
+    'move_wall': [{'op': 'move_element', 'allow_dependents': True, 'id': 585072, 'dy': 1.0}],
+    'move_grid': [{'op': 'move_element', 'allow_dependents': True, 'id': 578141, 'dx': 1.0}],
+    'move_level': [{'op': 'move_element', 'allow_dependents': True, 'id': 32567, 'dz': 1.0}],
+    'move_instance': [{'op': 'move_instance', 'allow_dependents': True, 'id': 730441, 'dx': 1.0}],
+    'rotate_instance': [{'op': 'rotate_instance', 'allow_dependents': True, 'id': 730441, 'deg': 90.0}],
+    'wall_height': [{'op': 'resize_wall', 'allow_dependents': True, 'id': 585072, 'height': 60.0}],
+    'wall_length': [{'op': 'resize_wall', 'allow_dependents': True, 'id': 585072, 'length_delta': 2.0}],
     'move_textnote': [{'op': 'move_textnote', 'id': 916133, 'dx': 1.0, 'dy': 0.5}],
     'delete_textnote': [{'op': 'delete', 'id': 916133}],
     'add_textnote': [{'op': 'add_textnote', 'template': 916133, 'x': -60.0, 'y': 20.0, 'text': 'ADDED BY SAVEGATE'}],

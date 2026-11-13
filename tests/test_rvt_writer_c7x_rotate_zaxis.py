@@ -19,7 +19,7 @@ def _fields(path, eid):
 
 def test_zaxis_matches_matrix_third_column(tmp_path):
     from savegate import rvt_writer_ops as WO
-    o = str(tmp_path / 'o.rvt'); WO.run(S, [{'op': 'rotate_instance', 'id': 642543, 'deg': 90.0}], o)
+    o = str(tmp_path / 'o.rvt'); WO.run(S, [{'op': 'rotate_instance', 'allow_dependents': True, 'id': 642543, 'deg': 90.0}], o)
     z, m = _fields(o, 642543)
     col3 = [m[0][2], m[1][2], m[2][2]]
     assert all(abs(a - b) < 1e-9 for a, b in zip(z, col3)), (z, col3)

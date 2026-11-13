@@ -4,7 +4,7 @@ import os, sys, struct, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/corpus/2024/43_Snowdon_Towers_Sample_Structural.rvt'); EL = 730441
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk sample')
-OPS = [{'op': 'rotate_instance', 'id': EL, 'deg': 90.0}]
+OPS = [{'op': 'rotate_instance', 'allow_dependents': True, 'id': EL, 'deg': 90.0}]
 
 
 def _f(path):

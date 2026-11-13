@@ -18,7 +18,7 @@ def _origins(path, el):
 def test_move_accepted_and_every_origin_moved(tmp_path, kind):
     import savegate as sg
     from savegate import rvt_writer_ops as WO
-    el, d = CASES[kind]; ops = [{'op': 'move_element', 'id': el, 'dx': d[0], 'dy': d[1], 'dz': d[2]}]
+    el, d = CASES[kind]; ops = [{'op': 'move_element', 'allow_dependents': True, 'id': el, 'dx': d[0], 'dy': d[1], 'dz': d[2]}]
     o = str(tmp_path / 'o.rvt'); WO.run(SRC, ops, o); nb = open(o, 'rb').read()
     cur = str(tmp_path / 'c.rvt'); shutil.copy(SRC, cur)
     doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False, backup_keep=2))

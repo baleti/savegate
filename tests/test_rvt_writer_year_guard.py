@@ -13,11 +13,11 @@ def test_old_year_refused_without_output(tmp_path):
     from savegate import rvt_writer_ops as WO
     from savegate.core import UnsupportedVersion
     out = str(tmp_path / 'o.rvt'); t = _target(S[0])
-    with pytest.raises(UnsupportedVersion): WO.run(S[0], [{'op': 'move_element', 'id': t, 'dx': 1.0, 'dy': 0.0}], out)
+    with pytest.raises(UnsupportedVersion): WO.run(S[0], [{'op': 'move_element', 'allow_dependents': True, 'id': t, 'dx': 1.0, 'dy': 0.0}], out)
     assert not os.path.exists(out)
 
 def test_lab_flag_still_writes(tmp_path):
     from savegate import rvt_writer_ops as WO
     out = str(tmp_path / 'o.rvt'); t = _target(S[0])
-    WO.run(S[0], [{'op': 'move_element', 'id': t, 'dx': 1.0, 'dy': 0.0}], out, lab=True)
+    WO.run(S[0], [{'op': 'move_element', 'allow_dependents': True, 'id': t, 'dx': 1.0, 'dy': 0.0}], out, lab=True)
     assert os.path.getsize(out) > 0

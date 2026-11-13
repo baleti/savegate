@@ -5,7 +5,7 @@ import os, sys, struct, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/corpus/2024/43_Snowdon_Towers_Sample_Structural.rvt'); EL = 585072
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk sample')
-H = [{'op': 'resize_wall', 'id': EL, 'height': 60.0}]; LN = [{'op': 'resize_wall', 'id': EL, 'length_delta': 2.0}]
+H = [{'op': 'resize_wall', 'allow_dependents': True, 'id': EL, 'height': 60.0}]; LN = [{'op': 'resize_wall', 'allow_dependents': True, 'id': EL, 'length_delta': 2.0}]
 
 
 def _read(path):

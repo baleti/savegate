@@ -5,9 +5,9 @@ import os, sys, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/corpus/2024/43_Snowdon_Towers_Sample_Structural.rvt')
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk sample')
-ROUNDS = [([{'op': 'move_element', 'id': 588559, 'dx': 1.0, 'dy': 0.5}], {}),
+ROUNDS = [([{'op': 'move_element', 'allow_dependents': True, 'id': 588559, 'dx': 1.0, 'dy': 0.5}], {}),
           ([{'op': 'add_element', 'template': 589763, 'dy': 3.0}], 'add'),
-          ([{'op': 'move_element', 'id': 578141, 'dx': 1.0, 'dy': 0.5}], {})]
+          ([{'op': 'move_element', 'allow_dependents': True, 'id': 578141, 'dx': 1.0, 'dy': 0.5}], {})]
 
 
 def test_chain_move_add_move_placed_elements(tmp_path):

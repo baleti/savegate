@@ -151,6 +151,7 @@ def _check_deleted_once(src_path, ops):
 
 def run(src_path, ops, dst_path, check_source=True, lab=False):
     _lab(); import rvtgen
+    for o in ops: _check_numbers(o)      # pure input validation first: no file needed (test_rvt_writer_c7x_finite_numbers expects ValueError, not FileNotFoundError)
     if not lab:      # c7x-rvtread2 561: the writer is fitted and oracle-tested for the writable years only; other years would produce unverified files (the save path refuses them, the raw API did not)
         from .adapters import RvtAdapter
         with open(src_path, 'rb') as _f: RvtAdapter().sniff(_f.read())      # raises UnsupportedVersion
@@ -219,9 +220,33 @@ def _group_guard(src_path, o):
             raise ValueError('op %s: element %d is a member of group %s: members cannot be edited alone (group not updated), refused' % (o['op'], i, gid))
 
 
+DEPENDENT_CLASSES = ('FamilyInstance', 'SWall', 'Wall', 'ArcWall', 'Floor', 'ContFooting', 'Rebar', 'Alignment')   # plus every class whose name contains 'Dim'
+
+
+def _dependents_guard(src_path, o):
+    """c5x-rvtgap 76: move / rotate / resize change the geometry of ONE element; dimensions anchored to it, walls joined to it and instances hosted on it are NOT updated by any writer op, so the saved
+    model would be semantically stale (dimension values, joins, floating doors) although structurally valid. Fail closed: refuse unless the op carries allow_dependents=true (explicit, for oracle tests)."""
+    if o.get('allow_dependents') is True or o.get('id') is None: return
+    sys.path.insert(0, os.path.expanduser('~/rvt-research')); import collections, rvt_xcache
+    recs = rvt_xcache.get_x_ro(src_path)['recs']; cls = {k[0]: k[1] for k in recs}; tid = int(o['id']); found = collections.Counter()
+    def refs(v, out, d=0):
+        if d > 12: return
+        if isinstance(v, dict):
+            for q in v.values(): refs(q, out, d + 1)
+        elif isinstance(v, (list, tuple)):
+            for q in v: refs(q, out, d + 1)
+        elif type(v).__name__ == 'EID': out.add(int(v))
+    for (eid, c), r in recs.items():
+        if eid == tid or not (c in DEPENDENT_CLASSES or 'Dim' in str(c)): continue
+        out = set(); refs(r.get('fields'), out)
+        if tid in out: found[c] += 1
+    if found: raise ValueError('op %s: element %d has dependents the writer does not update (%s): dimensions, joins or hosted instances would go stale; refused (set allow_dependents=true to override for a Revit-VM test)' % (o['op'], tid, ', '.join('%s x%d' % kv for kv in sorted(found.items()))))
+
+
 def _apply_ops(g, src_path, ops, new_ids):
     for o in ops:
         _group_guard(src_path, o)
+        if o['op'] in ('move_instance', 'move_element', 'rotate_instance', 'resize_wall'): _dependents_guard(src_path, o)
         if o['op'] == 'delete': g.delete(int(o['id']))
         elif o['op'] == 'add_textnote':
             T = g.template(int(o['template'])); nid = g.nextid

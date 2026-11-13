@@ -10,7 +10,7 @@ CASES = [('Partitions/38', 1721627), ('Partitions/39', 1566354)]
 def test_move_in_partition_accepted_only_that_partition_differs(tmp_path, part, eid):
     import savegate as sg, wledit
     from savegate import rvt_writer_ops as WO
-    ops = [{'op': 'move_element', 'id': eid, 'dx': 1.0}]
+    ops = [{'op': 'move_element', 'allow_dependents': True, 'id': eid, 'dx': 1.0}]
     o = str(tmp_path / 'o.rvt'); WO.run(SRC, ops, o); nb = open(o, 'rb').read()
     cur = str(tmp_path / 'c.rvt'); shutil.copy(SRC, cur)
     doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False, backup_keep=2))
@@ -22,4 +22,4 @@ def test_move_in_partition_accepted_only_that_partition_differs(tmp_path, part, 
 def test_edit_spanning_two_partitions_refused(tmp_path):
     from savegate import rvt_writer_ops as WO
     with pytest.raises(Exception):
-        WO.run(SRC, [{'op': 'move_element', 'id': e, 'dx': 1.0} for _, e in CASES], str(tmp_path / 'x.rvt'))
+        WO.run(SRC, [{'op': 'move_element', 'allow_dependents': True, 'id': e, 'dx': 1.0} for _, e in CASES], str(tmp_path / 'x.rvt'))

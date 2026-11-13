@@ -5,7 +5,7 @@ import os, sys, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/corpus/2024/47_Snowdon_Towers_Sample_Site.rvt')
 pytestmark = pytest.mark.skipif(not os.path.exists(SRC), reason='no Autodesk sample')
-OPS = [{'op': 'move_element', 'id': 1139388, 'dx': 1.0}]
+OPS = [{'op': 'move_element', 'allow_dependents': True, 'id': 1139388, 'dx': 1.0}]
 
 
 def _make(tmp_path, ops=OPS):
@@ -37,10 +37,10 @@ def test_flipped_bit_is_refused(tmp_path):
 
 
 def test_edit_spanning_two_partitions_is_refused_by_the_writer(tmp_path):
-    ops = OPS + [{'op': 'move_element', 'id': 1139388 + 0, 'dx': 0}]
+    ops = OPS + [{'op': 'move_element', 'allow_dependents': True, 'id': 1139388 + 0, 'dx': 0}]
     from savegate import rvt_writer_ops as WO
     import wledit
     e = wledit.Editor(SRC); other = [i for i in list(e.m.ids)[:20000] if e.trace(i)[0] == 'Partitions/94'][:1]
     if not other: pytest.skip('no element found in partition 94')
     with pytest.raises(Exception):
-        WO.run(SRC, [{'op': 'move_element', 'id': 1139388, 'dx': 1.0}, {'op': 'move_element', 'id': other[0], 'dx': 1.0}], str(tmp_path / 'x.rvt'))
+        WO.run(SRC, [{'op': 'move_element', 'allow_dependents': True, 'id': 1139388, 'dx': 1.0}, {'op': 'move_element', 'allow_dependents': True, 'id': other[0], 'dx': 1.0}], str(tmp_path / 'x.rvt'))

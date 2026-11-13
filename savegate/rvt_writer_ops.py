@@ -182,8 +182,37 @@ def _check_placed_class(src_path, eid, op):
         raise ValueError('op %s: element %s is of class %s (a type, style, sketch plane or unknown record): not an element placed in the model, refused' % (op, eid, c))
 
 
+def _find_key(x, key):
+    """first value stored under dict key `key` anywhere inside the decoded record (m_groupId sits in a nested base object, not at top level)"""
+    if isinstance(x, dict):
+        if key in x: return x[key]
+        for v in x.values():
+            r = _find_key(v, key)
+            if r is not None: return r
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            r = _find_key(v, key)
+            if r is not None: return r
+    return None
+
+
+def _group_guard(src_path, o):
+    """c7x-rvtread2 item 515: an element whose FamilyInstance.m_groupId names a group is a MEMBER: its group (member records, ElementGroupType.m_definingGroupInstId) is not updated by any writer op,
+    so move / delete / clone / retype / rotate of a member (or of the defining instance) would leave the group inconsistent. Refused until a Revit verdict."""
+    ids = [int(o[k]) for k in ('id', 'template') if o.get(k) is not None]
+    if o['op'] == 'delete_cascade' and ids: ids = sorted(set(ids) | set(cascade_plan(src_path, ids[0])))
+    if not ids: return
+    sys.path.insert(0, os.path.expanduser('~/rvt-research')); import rvt_xcache
+    recs = {k[0]: v for k, v in rvt_xcache.get_x_ro(src_path)['recs'].items()}
+    for i in ids:
+        gid = _find_key((recs.get(i) or {}).get('fields', {}), 'm_groupId')
+        if gid is not None and 'EID(18446744073709551615)' != str(gid) and str(gid) not in ('0', '-1'):
+            raise ValueError('op %s: element %d is a member of group %s: members cannot be edited alone (group not updated), refused' % (o['op'], i, gid))
+
+
 def _apply_ops(g, src_path, ops, new_ids):
     for o in ops:
+        _group_guard(src_path, o)
         if o['op'] == 'delete': g.delete(int(o['id']))
         elif o['op'] == 'add_textnote':
             T = g.template(int(o['template'])); nid = g.nextid

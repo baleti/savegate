@@ -13,7 +13,9 @@ def _try(tmp_path, el):
     cur = str(tmp_path / 'c.rvt'); shutil.copy(SRC, cur); before = open(cur, 'rb').read()
     doc = sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False, backup_keep=2))
     try: sg.save(doc, nb, {'modified': ['stream:' + pn], 'deleted': ['el:%d' % el]}); ok = True
-    except sg.SaveError: ok = False
+    except sg.SaveError as e:
+        if type(e).__name__ == 'LowMemory': pytest.skip('gate memory preflight refused on this host (needs ~2 GB free for a 26 MB file); rerun with free memory or SAVEGATE_MEM_FACTOR=0 under a 3 GB cap')
+        ok = False
     return ok, cur, before, nb
 
 

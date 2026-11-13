@@ -42,3 +42,19 @@ def test_cache_store_key_folds_case(monkeypatch, ci):
     a = backup.backup_dirs('/tmp/Proj/Sub/m.rvt'); b = backup.backup_dirs('/tmp/proj/sub/M.RVT')
     assert (a[1] == b[1]) == ci
     assert a[-1] == backup.backup_dirs('/tmp/Proj/Sub/m.rvt')[-1]   # deterministic
+
+
+def test_legacy_key_fallback_backup_still_found_and_restored(tmp_path, monkeypatch):
+    """c7x-rvtread2 item 547: a backup stored by an older version under the unfolded cache key (mixed-case folder, case-insensitive FS) must still be listed and restorable"""
+    import hashlib
+    monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
+    monkeypatch.setattr(backup, '_CASE_INSENSITIVE', True)
+    d = tmp_path / 'Proj'; d.mkdir(); f = str(d / 'Model.rvt'); _mk(f, b'NEW' * 50)
+    legacy = os.path.join(str(tmp_path / 'cache'), hashlib.sha1(os.path.abspath(str(d)).encode()).hexdigest()[:12])
+    old = b'OLD' * 50; h = hashlib.sha256(old).hexdigest()
+    os.makedirs(legacy); name = 'Model.rvt.20260101-000000-000-%s' % h[:8]
+    with open(os.path.join(legacy, name), 'wb') as g: g.write(old)
+    found = backup.list_backups(f)
+    assert [os.path.basename(x[1]) for x in found] == [name]
+    backup.restore(f)
+    assert open(f, 'rb').read() == old

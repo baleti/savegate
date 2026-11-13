@@ -631,6 +631,10 @@ class RvtAdapter:
         t = s['BasicFileInfo'].data.decode('utf-16le', 'ignore')
         m = re.search(r'(20[12]\d)', t)
         v = m.group(1) if m else '?'
+        if v in RVT_WRITABLE:      # c7x-rvtread2 566: the year text alone can be spoofed; the build stamp (YYYYMMDD_HHMM(x64)) must agree (genuine files: build year in [year-2, year], 73/73 stamped corpus files)
+            mb = re.search(r'(20[12]\d)\d{4}_\d{4}\(x\d\d\)', t)
+            if mb and not (int(v) - 2 <= int(mb.group(1)) <= int(v)):
+                raise UnsupportedVersion('Revit file says %s but its build stamp is from %s: the year text and the build disagree, refusing (possible tampered or mislabelled file).' % (v, mb.group(1)))
         if v not in RVT_WRITABLE:
             raise UnsupportedVersion('Revit %s file cannot be saved: writable years are %s. The file was not touched; open it in Revit and Save As a '
                                      'writable year, or save the edit as a new file with the writer.' % (v, ', '.join(RVT_WRITABLE)))

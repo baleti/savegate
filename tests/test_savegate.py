@@ -683,6 +683,7 @@ def test_declared_block_record_does_not_excuse_its_entities(tmp_path):
     import sys
     sys.path.insert(0, os.path.expanduser('~/dwg-write'))
     dwgdoc = pytest.importorskip('dwgdoc'); X = pytest.importorskip('dwgxform'); wtest = pytest.importorskip('wtest')
+    if not os.path.exists(os.path.expanduser('~/dwg-write/templates/blank_2018.dwg')): pytest.skip('no DWG template on this host')      # c7x-rvtread2 568
     d0 = dwgdoc.Doc(open(os.path.expanduser('~/dwg-write/templates/blank_2018.dwg'), 'rb').read()); wtest.basic(d0)
     p = tmp_path / 'f.dwg'; p.write_bytes(d0.save())
     d = dwgdoc.Doc(p.read_bytes()); hs = list(d.entities('*Model_Space')); ms = d.model_space()

@@ -9,6 +9,7 @@ class GateClosed(SaveError): pass
 class OverwriteDisabled(SaveError): pass
 class Locked(SaveError): pass
 class DiskError(SaveError): pass
+class LowMemory(DiskError): pass      # c5x-rvtread2 item 187: the gate's checks of a big RVT would not fit in the free RAM; refused before any work, original untouched
 class Exists(SaveError): pass
 class HardlinkTarget(SaveError): pass     # target has other hard links; replace-by-rename would detach them (they keep the OLD content)
 class ReadOnlyTarget(SaveError): pass     # target carries a read-only flag/mode; refused up front unless Config.allow_readonly

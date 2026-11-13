@@ -255,6 +255,36 @@ def _preflight_space(doc, new_bytes):
         if free < need: raise DiskError('not enough free space in %s (%s): %d MB free, %d MB needed; nothing was written, the original is untouched' % (what, d, free >> 20, need >> 20))
 
 
+def _available_memory():
+    """bytes of RAM this process can still use: MemAvailable, lowered by a cgroup limit when one applies; None when unknown"""
+    avail = None
+    try:
+        for l in open('/proc/meminfo'):
+            if l.startswith('MemAvailable:'): avail = int(l.split()[1]) * 1024; break
+    except (OSError, ValueError): pass
+    try:
+        cg = open('/proc/self/cgroup').read().strip().split('\n')[-1].split('::')[-1] if os.path.exists('/proc/self/cgroup') else ''
+        base = '/sys/fs/cgroup' + cg
+        mx = open(base + '/memory.max').read().strip()
+        if mx != 'max':
+            left = int(mx) - int(open(base + '/memory.current').read().strip())
+            avail = left if avail is None else min(avail, left)
+    except (OSError, ValueError): pass
+    return avail
+
+
+def _preflight_memory(doc, new_bytes):
+    """c5x-rvtread2 item 187: the gate decodes source and output of an RVT (measured peak about 56x the file size: 22 MB -> 1.24 GB; a 51 MB project was OOM-killed at 2 GB).
+    Refuse up front, with a clear message, when the free RAM is clearly below 60x the file size, instead of dying midway (the original stays intact either way, but leaves a temp copy
+    and no explanation). SAVEGATE_MEM_FACTOR=0 disables the check; unknown free memory skips it. RVT only (OLE header)."""
+    try: f = float(os.environ.get('SAVEGATE_MEM_FACTOR', '60'))
+    except ValueError: f = 60.0
+    if f <= 0 or bytes(doc.buf[:4]) != b'\xd0\xcf\x11\xe0': return
+    need = int(f * max(len(new_bytes), len(doc.buf))); avail = _available_memory()
+    if avail is not None and avail < need:
+        raise LowMemory('not enough free memory to verify this save safely: about %d MB available, about %d MB needed for a %d MB file (set SAVEGATE_MEM_FACTOR=0 to skip this check); nothing was written, the original is untouched' % (avail >> 20, need >> 20, len(doc.buf) >> 20))
+
+
 def _save(doc, new_bytes, manifest, force, verify):
     """overwrite doc.path. Original is backed up first; verify failure/conflict/IO error leaves it untouched."""
     t0 = time.time(); cfg = doc.cfg; verify = cfg.verify if verify is None else verify
@@ -264,6 +294,7 @@ def _save(doc, new_bytes, manifest, force, verify):
         raise GateClosed('overwrite of %s %s is not enabled: the oracle test matrix is not green' % (fmt, doc.version))
     _check_writable_target(doc.path, cfg)
     _preflight_space(doc, new_bytes)
+    _preflight_memory(doc, new_bytes)
     if hasattr(doc.adapter, 'source_damage'):
         dm = doc.adapter.source_damage(doc.buf)
         if dm: raise VerifyFailed('the file is damaged (%d problem(s), first: %s); overwrite refused, the file was not touched. Use SAVE AS to write a copy.' % (len(dm), dm[0]), dict(source_damage=dm[:20]))

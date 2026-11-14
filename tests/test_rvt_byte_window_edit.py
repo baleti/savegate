@@ -15,10 +15,11 @@ def _target(ed):
     return None
 
 
-def _edit(tmp_path, src, el, txt):
+def _edit(tmp_path, src, el, txt, keep=None):
     import savegate as sg, wledit
     ed = wledit.Editor(src); ed.set_strings([(el, 'ForgeTypeId.m_typeId', txt)]); o = str(tmp_path / 'o.rfa'); ed.save(o); new = open(o, 'rb').read(); del ed
     cur = str(tmp_path / 'c.rfa'); shutil.copy(src, cur)
+    if keep is not None: keep.append(cur)
     sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': ['el:%d' % el]})
     return cur
 
@@ -76,9 +77,9 @@ def test_window_for_size_and_charset_variants(tmp_path, txt):
     pn, i, r, log, q = A.trace(el)
     if len(txt) >= 5000:   # the gate refuses growth that changes later gzip members: refusal with the file byte-identical is the expected safe outcome
         import savegate.errors as se
-        before = open(SRC, 'rb').read()
-        with pytest.raises(se.VerifyFailed): _edit(tmp_path, SRC, el, txt)
-        assert open(SRC, 'rb').read() == before
+        before = open(SRC, 'rb').read(); keep = []
+        with pytest.raises(se.VerifyFailed): _edit(tmp_path, SRC, el, txt, keep)
+        assert open(keep[0], 'rb').read() == before   # the working copy the gate saw is untouched
         return
     cur = _edit(tmp_path, SRC, el, txt)
     B = wledit.Editor(cur)

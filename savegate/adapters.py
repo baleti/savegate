@@ -1169,6 +1169,13 @@ class RvtAdapter:
                     for k in ('m_locked', 'm_moribund', 'm_dummy'):
                         v = fl.get(k)
                         if isinstance(v, int) and v not in (0, 1): bad.append(('flag_out_of_range', 'el:%d %s = %d in the output (a flag must be 0 or 1)' % (e, k, v)))
+                    if sed is not None:      # c5x-rvtgap 187: an edit must not zero a reference field or drop a real reference (id to the invalid sentinel)
+                        sf = sed.trace(e)[2].get('fields') or {}
+                        for k in ('m_famId', 'm_assocLevelId', 'm_unplacedOwnerId', 'm_ownerDBViewId', 'm_createdPhaseId', 'm_demolishedPhaseId', 'm_designOptionId'):
+                            nv, ov = fl.get(k), sf.get(k)
+                            if nv is None or ov is None or int(nv) == int(ov): continue
+                            if int(nv) == 0: bad.append(('reference_zeroed', 'el:%d %s was set to 0' % (e, k)))
+                            elif int(nv) == 0xFFFFFFFFFFFFFFFF and int(ov) < (1 << 62): bad.append(('reference_dropped', 'el:%d %s lost its reference to el:%d' % (e, k, int(ov))))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

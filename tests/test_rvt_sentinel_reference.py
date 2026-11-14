@@ -17,5 +17,6 @@ def test_sentinel(tmp_path, fld, target):
     except Exception as e: ok = False; err = 'RAW %r' % e
     print(fld, '->', target, 'ACCEPTED' if ok else 'refused', str(err)[:110])
     assert not isinstance(err, str), err
+    if (fld, target) != ('m_designOptionId', 2**64 - 1): assert not ok, 'reference zeroed or dropped and accepted'   # designOption holds the special main-model value -4 in the source, -1 is not a dropped real reference   # c5x-rvtgap 187
     if ok: assert open(t, 'rb').read() == new
     else: assert open(t, 'rb').read() == orig

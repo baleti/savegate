@@ -41,7 +41,7 @@ def test_edit_then_revert_restores_decompressed_partitions(tmp_path):
     import wledit
     A = wledit.Editor(SRC); el = _target(A)
     if el is None: pytest.skip('no target')
-    old = [x[4] for x in A.trace(el)[3] if x[1] == 'ForgeTypeId.m_typeId'][0]
+    old = [x[4] for x in A.trace(el)[3] if x[1] == 'ForgeTypeId.m_typeId' and x[3] - x[2] >= 6][0]
     cur = _edit(tmp_path, SRC, el, 'Revert302')
     import savegate as sg
     ed = wledit.Editor(cur); ed.set_strings([(el, 'ForgeTypeId.m_typeId', old)]); o = str(tmp_path / 'o2.rfa'); ed.save(o); new = open(o, 'rb').read(); del ed

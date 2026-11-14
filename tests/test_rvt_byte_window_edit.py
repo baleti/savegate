@@ -74,6 +74,12 @@ def test_window_for_size_and_charset_variants(tmp_path, txt):
     A = wledit.Editor(SRC); el = _target(A)
     if el is None: pytest.skip('no target')
     pn, i, r, log, q = A.trace(el)
+    if len(txt) >= 5000:   # the gate refuses growth that changes later gzip members: refusal with the file byte-identical is the expected safe outcome
+        import savegate.errors as se
+        before = open(SRC, 'rb').read()
+        with pytest.raises(se.VerifyFailed): _edit(tmp_path, SRC, el, txt)
+        assert open(SRC, 'rb').read() == before
+        return
     cur = _edit(tmp_path, SRC, el, txt)
     B = wledit.Editor(cur)
     assert [p for p in A.m.parts if A.m.parts[p]['joined'] != B.m.parts[p]['joined']] == [pn]

@@ -25,3 +25,14 @@ def test_flag(tmp_path, fld, v, F):
         got = wledit.Editor(str(t)).trace(7)[2]['fields'][fld.split('.')[1]]
         assert got == v, got
     else: assert t.read_bytes() == orig
+
+@pytest.mark.parametrize('y', [2020, 2021, 2022, 2023, 2025])
+def test_unwritable_year_refused(tmp_path, y):
+    """c5x-rvtgap 173b: the same save on a non-writable year is refused with UnsupportedVersion and the file is untouched."""
+    f = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-%d.rfa' % y)
+    if not os.path.exists(f): pytest.skip('no sample')
+    t = str(tmp_path / 'x.rfa'); shutil.copy(f, t); orig = open(t, 'rb').read()
+    with pytest.raises(sg.SaveError):
+        doc = sg.open_doc(t, None, sg.Config(allow_overwrite=True, require_gate=False, journal_dir=str(tmp_path / 'j')))
+        sg.save(doc, orig[:-1] + bytes([orig[-1] ^ 1]), {'modified': ['el:7']})
+    assert open(t, 'rb').read() == orig

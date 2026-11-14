@@ -120,6 +120,7 @@ def _check_numbers(o):
         if k in o and o[k] is not None:
             if type(o[k]) not in (int, float): raise ValueError('op %s: %s=%r must be a number (int or float), not %s' % (o['op'], k, o[k], type(o[k]).__name__))
             v = float(o[k])
+            if k == 'deg' and abs(v) > 3600: raise ValueError('op %s: deg=%r is outside +-3600 degrees (an angle that large is a caller bug, 1e308 degrees was accepted before)' % (o.get('op'), o[k]))      # c5x-rvtgap 111
             if not math.isfinite(v) or (k != 'deg' and abs(v) > MAX_ABS): raise ValueError('op %s: %s=%r is not a finite value within +-%g' % (o.get('op'), k, o[k], MAX_ABS))
 
 

@@ -663,6 +663,13 @@ class RvtAdapter:
             for mb in re.finditer(r'(20[12]\d)\d{4}_\d{4}\(x\d\d\)', t):      # c7x-rvtread2 589: EVERY stamp-shaped string must agree, a crafted path stamp must not outvote the real one
                 if not (int(v) - 2 <= int(mb.group(1)) <= int(v)):
                     raise UnsupportedVersion('Revit file says %s but a build stamp is from %s: the year text and the build disagree, refusing (possible tampered or mislabelled file).' % (v, mb.group(1)))
+        if v in RVT_WRITABLE:      # c5x-rvtread2 283: the year text is only a label; the schema in Formats/Latest decides the id width (8 bytes from 2024 on, 4 before: 203/203 local+public 2024/2026 files vs 2016-2023 samples). A 2023 file relabelled 2024 was accepted
+            try:
+                import fmt_parser as _fp, rvt_scan as _rs; from rvtfmt import inflate_stream as _inf
+                _w = _rs.id_size(_fp.parse(_inf(s['Formats/Latest'].data)[1])[0])
+            except Exception: _w = None
+            if _w != 8:
+                raise UnsupportedVersion('Revit file says %s but its schema uses %s-byte element ids (a %s-layout file): the year text and the content disagree, refusing (possible tampered or mislabelled file).' % (v, _w, 'pre-2024' if _w == 4 else 'unknown'))
         if v not in RVT_WRITABLE:
             raise UnsupportedVersion('Revit %s file cannot be saved: writable years are %s. The file was not touched; open it in Revit and Save As a '
                                      'writable year, or save the edit as a new file with the writer.' % (v, ', '.join(RVT_WRITABLE)))

@@ -1,11 +1,13 @@
 """c5x-rvtgap 169: 1-byte flag fields of Element (m_locked, m_moribund, m_dummy) of el:7 in the Autodesk 2024 rfa set to 0/1/2/255 through Editor.modify + gate. Verdict printed; raw exception or damaged original fails; ACCEPTED must read back."""
 import os, sys, shutil, pytest
 import savegate as sg
-F = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
-@pytest.mark.skipif(not os.path.exists(F), reason='no sample')
+import itertools
+FS = [os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-%d.rfa' % y) for y in (2024, 2026)]
+@pytest.mark.parametrize('F', FS)
 @pytest.mark.parametrize('fld', ['Element.m_locked', 'Element.m_moribund', 'Element.m_dummy'])
 @pytest.mark.parametrize('v', [1, 2, 255])
-def test_flag(tmp_path, fld, v):
+def test_flag(tmp_path, fld, v, F):
+    if not os.path.exists(F): pytest.skip('no sample')
     sys.path[:0] = [os.path.expanduser('~/rvt-research/write-lab'), os.path.expanduser('~/rvt-research')]
     import wledit
     t = tmp_path / 'x.rfa'; shutil.copy(F, t); orig = t.read_bytes()

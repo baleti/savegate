@@ -140,6 +140,7 @@ def restore(path, which=None, allow_readonly=False):
     if not allow_readonly and os.path.exists(long_path(path)) and is_readonly(path): raise ReadOnlyTarget('%s is read-only: a restore replaces it like a save does; clear the flag or pass allow_readonly' % path)      # c4x-rvtgap
     bl = list_backups(path)
     if not bl: raise SaveError('no backup exists for %s' % path)
+    if which is not None and (type(which) is not int or which < 0): raise SaveError('backup number must be an int >= 0 (0 = newest), got %r' % (which,))      # c5x-rvtgap 132: -1 silently meant the OLDEST backup, 1.5/'0' raised raw TypeError, True meant 1
     which = which or 0
     if which >= len(bl): raise SaveError('backup %d does not exist (%d available)' % (which, len(bl)))
     use = bl[which][1]

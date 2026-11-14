@@ -1436,7 +1436,7 @@ class RvtAdapter:
         return out
 
     def validate(self, buf):
-        import cfb
+        import cfb, struct      # c7x-rvtread2 666: a later local 'import struct' made the name unbound in the except clause below (UnboundLocalError masked the real refusal)
         c = cfb.CFB(buf)
         s = c.streams()
         for need in ('BasicFileInfo',):

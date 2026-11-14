@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(not os.path.exists(F), reason='public sample mis
 def test_exact_value_allowed():
     assert adapters.RvtAdapter().overwrite_risks(_patched('Not enabled')) == []
 
-@pytest.mark.parametrize('v', ['Central', 'Local', 'Not enabled'])
+@pytest.mark.parametrize('v', ['Central', 'Local', 'Created Local', 'Not enabled'])
 def test_other_values_refused(v):
     assert adapters.RvtAdapter().overwrite_risks(_patched(v))
 

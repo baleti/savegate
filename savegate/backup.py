@@ -45,7 +45,7 @@ def list_backups(path):
                 p = os.path.join(bd, x)
                 try: out.append((x, p, os.stat(p).st_size))
                 except OSError: pass
-    out.sort(key=lambda t: t[0].split('.')[-2] if t[0].count('.') >= 2 else '', reverse=True)
+    out.sort(key=lambda t: t[0][len(n) + 1:], reverse=True)      # c2x-rvtgap 154: the stamp after '<name>.'; the old key split('.')[-2] was the file EXTENSION for 'x.rfa.<stamp>', so ties in mtime fell back to directory order
     out.sort(key=lambda t: os.stat(t[1]).st_mtime_ns, reverse=True)
     return out
 

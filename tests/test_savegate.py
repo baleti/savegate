@@ -663,7 +663,7 @@ def test_backup_size_cap_and_damaged_backup_not_restored(tmp_path, monkeypatch):
     monkeypatch.setenv('SAVEGATE_CACHE', str(tmp_path / 'cache'))
     p = tmp_path / 'a.bin'
     for i in range(6):
-        p.write_bytes(bytes([i]) * 1000); B.make_backup(str(p), keep=20, max_bytes=2500)
+        p.write_bytes(bytes([i]) * 1000); B.make_backup(str(p), keep=20, max_bytes=2500); __import__('time').sleep(0.006)      # c2x-rvtgap 154: backups of one file are >= several ms apart in real use; within one ms (same stamp, mtime tick ~4 ms) their order is not defined
     bl = B.list_backups(str(p))
     assert 2 <= len(bl) <= 3 and sum(b[2] for b in bl[:-1]) <= 2500      # cap: newest kept, middle ones dropped; the pristine original (oldest) is pinned and exempt (HB2, c5x-rvtread2)
     assert open(bl[-1][1], 'rb').read() == bytes([0]) * 1000

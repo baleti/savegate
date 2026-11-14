@@ -66,10 +66,40 @@ def fsync_dir(path):
         pass
 
 
+_PENDING = set()      # temp files written by write_temp and not yet renamed into place (c7x-rvtread2 650)
+_ARMED = {}
+
+
+def _on_term(signum, frame):
+    import signal
+    for t in list(_PENDING):
+        try: os.remove(t)
+        except OSError: pass
+    signal.signal(signum, signal.SIG_DFL); os.kill(os.getpid(), signum)
+
+
+def _pending_add(tmp):
+    """SIGTERM/SIGHUP/SIGQUIT used to leave the .sgtmp behind (12 of 14 runs). Main thread, POSIX only; only the DEFAULT action is replaced, a handler the host installed stays."""
+    import signal, threading
+    _PENDING.add(tmp)
+    if _WIN or threading.current_thread() is not threading.main_thread(): return
+    for n in ('SIGTERM', 'SIGHUP', 'SIGQUIT'):
+        g = getattr(signal, n, None)
+        if g is None or g in _ARMED: continue
+        try:
+            if signal.getsignal(g) == signal.SIG_DFL: signal.signal(g, _on_term); _ARMED[g] = True
+        except (ValueError, OSError): pass
+
+
+def _pending_done(tmp):
+    _PENDING.discard(tmp)
+
+
 def write_temp(dest, data):
     """write data to a fresh temp file next to dest, fsynced; returns the temp path"""
     d = os.path.dirname(os.path.abspath(dest))
     fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(dest)[:40] + '.', suffix='.sgtmp', dir=long_path(d))
+    _pending_add(tmp)
     try:
         with os.fdopen(fd, 'wb') as f:
             mv = memoryview(data)
@@ -80,6 +110,7 @@ def write_temp(dest, data):
     except BaseException:
         try: os.remove(tmp)
         except OSError: pass
+        _pending_done(tmp)
         raise
     return tmp
 
@@ -116,6 +147,7 @@ def commit_temp(tmp, dest, copy_mode_from=None, keep_readonly=False):
         os.chmod(long_path(dest), stat.S_IWRITE)      # Windows cannot replace a READONLY file
     _step('before_replace')
     replace_retry(tmp, dest)
+    _pending_done(tmp)
     if ro and _WIN:
         os.chmod(long_path(dest), stat.S_IREAD)
     _step('after_replace')

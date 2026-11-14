@@ -1,6 +1,6 @@
 """c7x-rvtread2 649: SIGINT / SIGTERM delivered to a process in the middle of an in-place save (2024 Autodesk sample family, random time 0.3-2.5 s):
-the target is always EXACTLY the old or the new bytes (never mixed) and the next save works. SIGINT also leaves no .sgtmp/.part debris.
-SIGTERM can leave a .sgtmp (measured 12 of 14): documented, not asserted (default SIGTERM action kills without cleanup; stale temp files are swept later)."""
+the target is always EXACTLY the old or the new bytes (never mixed) and the next save works. Neither signal leaves .sgtmp/.part debris.
+SIGTERM/SIGHUP/SIGQUIT used to leave the .sgtmp (12 of 14); atomic.py now removes pending temp files (650), so no debris is asserted for both."""
 import os, sys, shutil, subprocess, signal, time, random, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 SRC = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
@@ -20,6 +20,6 @@ def test_signal(tmp_path, sig):
         d = tmp_path / ('r%d' % r); d.mkdir(); t = str(d / 'a.rfa'); shutil.copy(SRC, t)
         p = subprocess.Popen([sys.executable, '-c', CHILD, t, nf, pn], env=env, stderr=subprocess.DEVNULL); time.sleep(rnd.uniform(0.3, 2.5)); p.send_signal(sig); p.wait()
         b = open(t, 'rb').read(); assert b in (old, new), 'MIXED bytes after %s' % sig.name
-        if sig == signal.SIGINT: assert not [x for x in os.listdir(d) if x.endswith(('.sgtmp', '.part'))]
+        if True: assert not [x for x in os.listdir(d) if x.endswith(('.sgtmp', '.part'))]
         sg.save(sg.open_doc(t, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': ['stream:' + pn, 'el:7']}) if b == old else None
         assert open(t, 'rb').read() == new

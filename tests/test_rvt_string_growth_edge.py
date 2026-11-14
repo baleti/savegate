@@ -19,3 +19,4 @@ def test_edge(tmp_path, n, ok):
         with pytest.raises(VerifyFailed) as ei: sg.save(doc, new, man)
         codes = {u[0] for u in ei.value.report['unexpected']}
         assert {'span_changed', 'growth_too_large'} <= codes and open(t, 'rb').read() == orig
+        assert sorted(os.listdir(tmp_path)) == ['x.rfa'], os.listdir(tmp_path)      # c2x-rvtgap 141: a refusal leaves no backup, temp or lock file

@@ -39,3 +39,11 @@ def test_path_with_a_writable_year_in_front_does_not_make_an_old_file_writable(t
 def test_path_with_an_old_year_in_front_does_not_make_a_2024_file_unwritable(tmp_path):
     from savegate.adapters import RvtAdapter
     RvtAdapter().sniff(_with_prefix(G[0], '\\\\srv2019\\jobs\\2021\\', tmp_path))      # must not raise
+
+
+def test_crafted_path_stamp_does_not_outvote_the_real_stamp(tmp_path):      # c7x-rvtread2 589
+    from savegate.adapters import RvtAdapter
+    from savegate.errors import UnsupportedVersion
+    Y22 = sorted(glob.glob(os.path.expanduser('~/rvt-research/corpus/2022/*.rvt')))
+    if not Y22: pytest.skip('no 2022 sample')
+    with pytest.raises(UnsupportedVersion): RvtAdapter().sniff(_with_prefix(Y22[0], 'C:\\\\2024 20240101_1200(x64)\\\\', tmp_path))

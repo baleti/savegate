@@ -1164,6 +1164,14 @@ class RvtAdapter:
                         a = [x[1] for x in sed.trace(e)[3]]; b = [x[1] for x in ed.trace(e)[3]]
                         if a != b: bad.append(('field_structure_changed', 'el:%d decodes to %d fields in the output versus %d in the source (count/length prefix damaged?)' % (e, len(b), len(a))))
                     except Exception: pass
+                try:      # c5x-rvtgap 178: flag bytes must stay booleans, and an element must not turn moribund (deleted) through an edit; deleting is the delete op
+                    fl = r.get('fields') or {}
+                    for k in ('m_locked', 'm_moribund', 'm_dummy'):
+                        v = fl.get(k)
+                        if isinstance(v, int) and v not in (0, 1): bad.append(('flag_out_of_range', 'el:%d %s = %d in the output (a flag must be 0 or 1)' % (e, k, v)))
+                    if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
+                        bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
+                except Exception: pass
                 if new_bad: bad.append(('nonfinite_value', 'el:%d holds a NaN, infinite, huge or control-character value in the output' % e))
         except Exception as ex: bad.append(('nonfinite_unchecked', 'could not scan the declared elements for NaN/inf: %s' % ex))
         finally:

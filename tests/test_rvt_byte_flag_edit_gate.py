@@ -20,6 +20,8 @@ def test_flag(tmp_path, fld, v, F):
     except Exception as e: ok = False; err = 'RAW %r' % e
     print(fld, v, 'ACCEPTED' if ok else 'refused', str(err)[:90])
     assert not isinstance(err, str), err
+    # c5x-rvtgap 178: flags must be 0/1 and an edit must not mark an element moribund
+    assert ok == (v == 1 and fld != 'Element.m_moribund'), (fld, v, err)
     if ok:
         assert t.read_bytes() == new
         got = wledit.Editor(str(t)).trace(7)[2]['fields'][fld.split('.')[1]]

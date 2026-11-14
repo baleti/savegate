@@ -405,7 +405,7 @@ def _set_instance_type(g, src_path, tid, new_sym):
     struct.pack_into('<Q', rec, o, new_sym)
     hdr = bytearray(T['hdr']); n_h = 0; k = hdr.find(ob)
     while k >= 0: hdr[k:k + 8] = nb; n_h += 1; k = hdr.find(ob, k + 8)
-    if not n_h: raise ValueError('old symbol id not found in the header entry (layout differs)')
+    if n_h != 2: raise ValueError('old symbol id found %d times in the header entry, expected exactly 2 (m_deletion and m_appearanceParents; 60 of 60 sampled Structural 2024 instances): layout differs or an accidental match, refusing' % n_h)      # c5x-rvtgap 95
     g.replace_existing(tid, hdr=bytes(hdr), rec=bytes(rec))
     def latest(raw, tid=tid, old=old, new_sym=new_sym):
         """Global/Latest keeps per-type instance lists [count u32][ids u64..] sorted, STARTING with the symbol id: move tid from old's list(s) to new_sym's list(s)"""

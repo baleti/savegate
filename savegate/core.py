@@ -45,7 +45,9 @@ def gate_open(fmt, version, cfg):
         with open(p) as f: g = json.load(f)
     except (OSError, ValueError):
         return False
-    return g.get(fmt, {}).get(version) == 'open' or g.get(fmt, {}).get('*') == 'open'
+    f = g.get(fmt) if isinstance(g, dict) else None      # c5x-rvtgap 122: a gate file of the wrong shape (list, null, string) raised AttributeError; it must simply read as closed
+    if not isinstance(f, dict): return False
+    return f.get(version) == 'open' or f.get('*') == 'open'
 
 
 class Doc:

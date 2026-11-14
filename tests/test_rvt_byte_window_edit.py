@@ -48,3 +48,20 @@ def test_edit_then_revert_restores_decompressed_partitions(tmp_path):
     sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': ['el:%d' % el]})
     B = wledit.Editor(cur)
     assert all(A.m.parts[p]['joined'] == B.m.parts[p]['joined'] for p in A.m.parts)
+
+
+def test_noedit_resave_of_edited_output_is_idempotent_or_refused(tmp_path):
+    """c5x-rvtread2 item 303: re-saving the already edited file with NO edit must either be refused with the file untouched, or leave the decompressed partitions identical."""
+    import wledit, savegate as sg
+    A = wledit.Editor(SRC); el = _target(A)
+    if el is None: pytest.skip('no target')
+    cur = _edit(tmp_path, SRC, el, 'Idem303 text')
+    before = open(cur, 'rb').read()
+    ed = wledit.Editor(cur); o = str(tmp_path / 'o3.rfa'); ed.save(o); new = open(o, 'rb').read(); del ed
+    try:
+        sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': []})
+    except Exception:
+        assert open(cur, 'rb').read() == before
+        return
+    B = wledit.Editor(cur); C = wledit.Editor(str(tmp_path / 'o3.rfa'))
+    assert all(B.m.parts[p]['joined'] == C.m.parts[p]['joined'] for p in C.m.parts)

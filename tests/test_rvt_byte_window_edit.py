@@ -65,3 +65,18 @@ def test_noedit_resave_of_edited_output_is_idempotent_or_refused(tmp_path):
         return
     B = wledit.Editor(cur); C = wledit.Editor(str(tmp_path / 'o3.rfa'))
     assert all(B.m.parts[p]['joined'] == C.m.parts[p]['joined'] for p in C.m.parts)
+
+
+@pytest.mark.parametrize('txt', ['G' * 5000, 'x', 'Uni\U0001F600é中'], ids=['grow5000', 'shrink1', 'nonbmp'])
+def test_window_for_size_and_charset_variants(tmp_path, txt):
+    """c5x-rvtread2 items 294-296: same single-window check for grow, shrink to 1 char and non-BMP text; only the edited partition differs, and the text reads back."""
+    import wledit
+    A = wledit.Editor(SRC); el = _target(A)
+    if el is None: pytest.skip('no target')
+    pn, i, r, log, q = A.trace(el)
+    cur = _edit(tmp_path, SRC, el, txt)
+    B = wledit.Editor(cur)
+    assert [p for p in A.m.parts if A.m.parts[p]['joined'] != B.m.parts[p]['joined']] == [pn]
+    a = A.m.parts[pn]['joined']; b = B.m.parts[pn]['joined']; d = len(b) - len(a)
+    assert d != 0 and b[:i] == a[:i] and b[q + d + 4:] == a[q + 4:]
+    assert [x[4] for x in B.trace(el)[3] if x[1] == 'ForgeTypeId.m_typeId'][0].startswith(txt[:60])

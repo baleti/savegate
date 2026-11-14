@@ -23,7 +23,13 @@ class Config:
     allow_damaged_edit: bool = False  # c4x-rvtgap 106: allow Save As of an EDITED copy of a source that is already damaged (unchanged rescue copies are always allowed)
     allow_readonly: bool = False      # overwrite a read-only target (the flag/mode is kept)
 
-    def __post_init__(self):      # c5x-rvtgap 119: backup_keep None/str/float crashed with a raw TypeError in the prune step; 0/1/negative silently dropped the original after the 2nd save
+    def __post_init__(self):      # c5x-rvtgap 121: a string like 'false' is truthy and would silently enable overwrite; the flags must be real bools
+        for k in ('allow_overwrite', 'require_gate', 'verify', 'allow_hardlink_break', 'allow_damaged_edit', 'allow_readonly'):
+            if type(getattr(self, k)) is not bool: raise ValueError('%s must be True or False, got %r' % (k, getattr(self, k)))
+        if type(self.backup_max_bytes) is not int or self.backup_max_bytes < 0: raise ValueError('backup_max_bytes must be an int >= 0, got %r' % (self.backup_max_bytes,))
+        self._post_119()
+
+    def _post_119(self):      # c5x-rvtgap 119: backup_keep None/str/float crashed with a raw TypeError in the prune step; 0/1/negative silently dropped the original after the 2nd save
         if type(self.backup_keep) is not int: raise ValueError('backup_keep must be an int, got %r' % (self.backup_keep,))
         if self.backup_keep < 2: self.backup_keep = 2      # the oldest backup (pristine original) is pinned only for keep >= 2
 

@@ -23,6 +23,10 @@ class Config:
     allow_damaged_edit: bool = False  # c4x-rvtgap 106: allow Save As of an EDITED copy of a source that is already damaged (unchanged rescue copies are always allowed)
     allow_readonly: bool = False      # overwrite a read-only target (the flag/mode is kept)
 
+    def __post_init__(self):      # c5x-rvtgap 119: backup_keep None/str/float crashed with a raw TypeError in the prune step; 0/1/negative silently dropped the original after the 2nd save
+        if type(self.backup_keep) is not int: raise ValueError('backup_keep must be an int, got %r' % (self.backup_keep,))
+        if self.backup_keep < 2: self.backup_keep = 2      # the oldest backup (pristine original) is pinned only for keep >= 2
+
 
 @dataclass
 class SaveResult:

@@ -16,14 +16,16 @@ CASES = {
  'sector_flip': lambda n: n[:600] + bytes([n[600] ^ 0xFF]) + n[601:], 'text': lambda n: b'not a revit file' * 100,
 }
 @pytest.mark.parametrize('k', sorted(CASES))
-@pytest.mark.parametrize('gate', [False, True])
+@pytest.mark.parametrize('gate', [False])   # gate=True is vacuous while the 2024/2026 overwrite gate is closed (GateClosed refuses everything); re-add when it opens
 @pytest.mark.parametrize('yr', ['2024', '2026'])
 def test_bad(tmp_path, k, gate, yr):
     f = str(tmp_path / 'a.rfa'); shutil.copy(SRC[yr], f); raw = open(f, 'rb').read(); new = _good(tmp_path, f)
     bad = CASES[k](new) if k != 'other_year' else open(G if yr == '2024' else F, 'rb').read()
     doc = sg.open_doc(f, None, sg.Config(allow_overwrite=True, require_gate=gate))
     try: sg.save(doc, bad, MAN); accepted = True
-    except Exception: accepted = False
+    except Exception as e:
+        accepted = False
+        assert type(e).__name__ != 'GateClosed', 'refusal must come from the checks, not the closed gate'
     now = open(f, 'rb').read()
     if accepted: pytest.fail('ESCAPE: damaged new bytes accepted (%s, gate=%s, same as good=%s)' % (k, gate, now == new))
     assert now == raw

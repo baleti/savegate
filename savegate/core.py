@@ -1,5 +1,5 @@
 """savegate engine: open_doc / save_as / save / restore with verify, backup, lock, journal."""
-import os, json, time, hashlib
+import os, stat, json, time, hashlib
 from dataclasses import dataclass, field
 from . import atomic
 from .atomic import long_path, sha256_file
@@ -41,9 +41,11 @@ class SaveResult:
 
 def gate_open(fmt, version, cfg):
     p = cfg.gate_file or os.environ.get('SAVEGATE_GATE') or os.path.join(os.path.expanduser('~'), '.config', 'savegate', 'gate.json')
-    try:
+    try:      # c5x-rvtgap 123: only a small regular file counts (a FIFO blocked forever, deep nesting raised RecursionError)
+        st = os.stat(p)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > 1 << 20: return False
         with open(p) as f: g = json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return False
     f = g.get(fmt) if isinstance(g, dict) else None      # c5x-rvtgap 122: a gate file of the wrong shape (list, null, string) raised AttributeError; it must simply read as closed
     if not isinstance(f, dict): return False

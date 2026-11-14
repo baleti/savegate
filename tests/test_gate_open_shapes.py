@@ -15,3 +15,16 @@ def test_open_cases(tmp_path):
 
 def test_missing_gate_file_is_closed(tmp_path):
     assert gate_open('rvt', '2024', sg.Config(gate_file=str(tmp_path / 'nope.json'))) is False
+
+def test_fifo_directory_huge_deep_are_closed(tmp_path):
+    import os, threading
+    res = {}
+    def run(path):
+        res[path] = gate_open('rvt', '2024', sg.Config(gate_file=path))
+    fifo = str(tmp_path / 'f'); os.mkfifo(fifo)
+    big = tmp_path / 'big.json'; big.write_text('{"x":"' + 'a' * (2 << 20) + '","rvt":{"2024":"open"}}')
+    deep = tmp_path / 'deep.json'; deep.write_text('[' * 100000)
+    for pth in (fifo, str(tmp_path), str(big), str(deep)):
+        th = threading.Thread(target=run, args=(pth,), daemon=True); th.start(); th.join(5)
+        assert not th.is_alive(), 'hung on %s' % pth
+        assert res[pth] is False

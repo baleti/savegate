@@ -682,7 +682,10 @@ class RvtAdapter:
             import cfb
             c = cfb.CFB(bytes(buf)); last = max(i for i, v in enumerate(c.fat) if v != 0xFFFFFFFF and i < c.nsectors)
             n = c.nsectors - (last + 1)
-            return ['%d whole sector(s) after the last used sector would be dropped by a save' % n] if n > 0 else []
+            r = ['%d whole sector(s) after the last used sector would be dropped by a save' % n] if n > 0 else []
+            end = (c.nsectors + 1) * c.ss + (512 - c.ss if c.major == 3 else 0)
+            if len(buf) > end: r.append('%d byte(s) after the end of the OLE container would be dropped by a save' % (len(buf) - end))   # c4x-rvtgap 365
+            return r
         except Exception:
             return []
 

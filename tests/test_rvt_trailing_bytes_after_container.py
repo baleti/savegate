@@ -1,9 +1,8 @@
-"""c4x-rvtgap 365: bytes appended after the OLE container end (Autodesk 2024 rfa sample + 100 bytes) are DROPPED by the no-edit writer save and the gate
-ACCEPTS the shorter file (data loss, original replaced). Expected safe behaviour: the tail is preserved or the save is refused. Currently fails (xfail strict)."""
+"""c4x-rvtgap 365: bytes appended after the OLE container end (Autodesk 2024 rfa sample + 96 bytes) were DROPPED by the no-edit writer save and the gate accepted the shorter file.
+Fixed: source_damage reports the tail, so the overwrite is refused and the original stays byte-identical."""
 import os, sys, shutil, pytest
 sys.path.insert(0, os.path.expanduser('~/rvt-research/write-lab')); sys.path.insert(0, os.path.expanduser('~/rvt-research'))
 
-@pytest.mark.xfail(strict=True, reason='c4x-rvtgap 365: trailing bytes after the container are dropped and the gate accepts')
 def test_trailing_bytes_not_silently_dropped(tmp_path):
     SRC = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2024.rfa')
     if not os.path.exists(SRC): pytest.skip('no sample')

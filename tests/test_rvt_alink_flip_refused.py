@@ -13,3 +13,16 @@ def test_header_flip_refused(tmp_path, el, off):
     with pytest.raises(sg.VerifyFailed):
         sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), new, {'modified': ['el:%d' % el]})
     assert open(cur, 'rb').read() == orig
+
+
+def test_next_record_alink_flip_after_same_length_edit_refused(tmp_path):
+    """c4x-rvtgap 447: el:0 edited same-length, the A link of the NEXT record (el:1) flipped: refused."""
+    import wledit, savegate as sg
+    A = wledit.Editor(SRC); W = A.m.IDW; pn, i, r, log, q = A.trace(0)
+    f = [x for x in log if isinstance(x[4], str) and len(x[4]) >= 3 and x[3] - x[2] == 4 + 2 * len(x[4]) and '\x00' not in x[4]][0]
+    ed = wledit.Editor(SRC); new = f[4][:-1] + ('Y' if f[4][-1] != 'Y' else 'Z'); ed.set_strings([(0, f[1], new, f[4])]); pt = ed.part(pn)
+    ob = bytes(ed.m.parts[pn]['joined'][q:q + 4]); pt.replace(q, 4, bytes(x ^ 1 for x in ob)); o = str(tmp_path / 'o.rfa'); ed.save(o); nb = open(o, 'rb').read(); del ed
+    cur = str(tmp_path / 'c.rfa'); shutil.copy(SRC, cur); orig = open(cur, 'rb').read()
+    with pytest.raises(sg.VerifyFailed):
+        sg.save(sg.open_doc(cur, None, sg.Config(allow_overwrite=True, require_gate=False)), nb, {'modified': ['el:0']})
+    assert open(cur, 'rb').read() == orig

@@ -33,6 +33,7 @@ _MSG = {
     'VerifyFailed': 'The edited file failed the safety check, so the original was NOT touched. Use Save As to write a copy, or report this file.',
     'UnsupportedVersion': 'This Revit version cannot be saved in place. Open it in Revit and Save As a supported year.',
     'GateClosed': 'Saving over the original is switched off. Use Save As.',
+    'LowMemory': 'This model is too large to verify safely on this machine, so the original was NOT touched. Use Save As to write a copy.',
     'OverwriteDisabled': 'Saving over the original is switched off. Use Save As.',
     'Locked': 'Another save of this file is running. Nothing was written; try again in a moment.',
     'DiskError': 'The disk refused the write (full, read-only or name too long). The original is unchanged.',

@@ -1258,16 +1258,15 @@ class RvtAdapter:
                 for n, e in c.streams().items():
                     if not n.startswith('Partitions/'): continue
                     pt = wlpart.Partition(rvtw.Stream(e.data), hs=hs); bj = b''.join(bytes(m['raw']) for m in pt.mem)
-                    last = {}                      # out[(n, eid)] is overwritten by later candidates: only the last one per key counts, so checksum only that one
+                    last = {}                      # c4x-rvtgap 447: ALL candidates per (partition, id) are kept (a false candidate later in the stream used to shadow the real record: el:8 own Adler flip accepted)
                     for i in S.header_candidates_tagged(bj, arr, W, etags):
                         i = int(i); L = struct.unpack_from('<I', bj, i + hs - 4)[0]
                         if L > len(bj) - i - hs or L < 2: continue
                         eid = int.from_bytes(bj[i + 4:i + 4 + W], 'little')
-                        last[(n, eid)] = (i, L)
-                    for k, (i, L) in last.items():
-                        if only is not None and not only.get(k): continue   # the output only matters for records valid in the source
-                        st = struct.unpack_from('<I', bj, i + 4 + W)[0]
-                        out[k] = (zlib.adler32(bj[i + 4 + W + 8:i + hs + L]) & 0xffffffff == st)
+                        last.setdefault((n, eid), []).append((i, L))
+                    for k, lst in last.items():
+                        if only is not None and not only.get(k): continue   # the output only matters for ids with a valid record in the source
+                        out[k] = sum(1 for (i, L) in lst if zlib.adler32(bj[i + 4 + W + 8:i + hs + L]) & 0xffffffff == struct.unpack_from('<I', bj, i + 4 + W)[0])   # number of valid candidates
                 return out
             a = amap(h[0]); b = amap(h[1], only=a)
         except Exception as ex: return [('adler_unchecked', 'could not verify the record checksums of source and output: %s' % str(ex)[:150])]
@@ -1279,7 +1278,7 @@ class RvtAdapter:
         for k in manifest.get('deleted', ()):
             try: gone.add(int(str(k).split(':')[-1]))
             except ValueError: pass
-        lost = sorted(k[1] for k, v in a.items() if v and not b.get(k, False) and k[1] not in gone)
+        lost = sorted(k[1] for k, v in a.items() if v and b.get(k, 0) < v and k[1] not in gone)
         return [('record_checksum_broken', '%d record(s) with a valid Adler32 in the source are invalid or missing in the output (element ids %s)' % (len(lost), lost[:6]))] if lost else []
 
     def _dangling_ref_checks(self, manifest):

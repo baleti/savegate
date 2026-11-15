@@ -1210,11 +1210,11 @@ class RvtAdapter:
             import wledit, cfb, rvtw, wlpart
             def mk(b):
                 fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
-            ed = mk(h[0]); pn = None; lo, hi = None, None
+            ed = mk(h[0]); pn = None; lo, hi = None, None; rs = None; W = 8
             for e in ids:
                 t = ed.trace(e)
                 if pn not in (None, t[0]): return []                   # several partitions: other rules cover it
-                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3])
+                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3]); rs = t[1] if rs is None else min(rs, t[1]); W = ed.m.IDW
                 lo = l if lo is None else min(lo, l); hi = u if hi is None else max(hi, u)
             def payload(buf):
                 st = rvtw.Stream(cfb.CFB(bytes(buf)).streams()[pn].data); pt = wlpart.Partition(st)
@@ -1234,6 +1234,8 @@ class RvtAdapter:
         a_end = len(A) - q
         if abs(len(B) - len(A)) > 16384 * len(ids):      # the cap the old 8 KB block rule imposed in effect (a 16384-char name = 32 KB growth stays refused, 7000 chars = 14 KB passes)
             return [('growth_too_large', '%s: the partition changed size by %d bytes for %d declared element(s)' % (pn, len(B) - len(A), len(ids)))]
+        if p < rs + 4 + W:      # c4x-rvtgap 445: the record's own A link and id (first 4+W bytes) never change in an in-place edit; the 40-byte allowance below let a flipped A link of the element after the el:0 record through
+            return [('changed_outside_declared_record', '%s: byte %d (the declared record starts at %d, its A link and id end at %d) differs' % (pn, p, rs, rs + 4 + W))]
         if p < lo - 40 or a_end > hi + 8:
             return [('changed_outside_declared_record', '%s: bytes %d..%d differ, the declared element(s) occupy %d..%d' % (pn, p, a_end, lo, hi))]
         return []

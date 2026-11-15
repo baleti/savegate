@@ -1210,11 +1210,11 @@ class RvtAdapter:
             import wledit, cfb, rvtw, wlpart
             def mk(b):
                 fd, p = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(b)); os.close(fd); paths.append(p); return wledit.Editor(p)
-            ed = mk(h[0]); pn = None; lo, hi = None, None; rs = None; rq = None; W = 8
+            ed = mk(h[0]); pn = None; lo, hi = None, None; rs = None; rq = None; rs_list = []; W = 8
             for e in ids:
                 t = ed.trace(e)
                 if pn not in (None, t[0]): return []                   # several partitions: other rules cover it
-                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3]); rs = t[1] if rs is None else min(rs, t[1]); W = ed.m.IDW; rq = t[4] if rq is None else max(rq, t[4])
+                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3]); rs = t[1] if rs is None else min(rs, t[1]); W = ed.m.IDW; rq = t[4] if rq is None else max(rq, t[4]); rs_list.append(t[1]) if not t[2]['short'] else None
                 lo = l if lo is None else min(lo, l); hi = u if hi is None else max(hi, u)
             def payload(buf):
                 st = rvtw.Stream(cfb.CFB(bytes(buf)).streams()[pn].data); pt = wlpart.Partition(st)
@@ -1234,6 +1234,12 @@ class RvtAdapter:
         a_end = len(A) - q
         if abs(len(B) - len(A)) > 16384 * len(ids):      # the cap the old 8 KB block rule imposed in effect (a 16384-char name = 32 KB growth stays refused, 7000 chars = 14 KB passes)
             return [('growth_too_large', '%s: the partition changed size by %d bytes for %d declared element(s)' % (pn, len(B) - len(A), len(ids)))]
+        import struct as _st      # c4x-rvtgap 449: the record's size field must be confirmed by the next record's A link in the OUTPUT (a grown edit with a wrong next A was accepted for el:0)
+        for _rs in rs_list:
+            if _rs + 12 + W <= len(B):
+                _L = _st.unpack_from('<I', B, _rs + 8 + W)[0]; _q = _rs + 12 + W + _L
+                if _q + 4 <= len(B) and _st.unpack_from('<I', B, _q)[0] != _L:
+                    return [('changed_outside_declared_record', '%s: the next record A link at %d does not confirm the size %d of the declared record at %d' % (pn, _q, _L, _rs))]
         if len(A) == len(B) and a_end > rq:     # c4x-rvtgap 447: same-length edit: the next record's A link (it follows the record, at rq) is only rewritten when the size changes
             return [('changed_outside_declared_record', '%s: same-length edit but byte %d is after the declared record end %d' % (pn, a_end - 1, rq))]
         if p < rs + 4 + W:      # c4x-rvtgap 445: the record's own A link and id (first 4+W bytes) never change in an in-place edit; the 40-byte allowance below let a flipped A link of the element after the el:0 record through

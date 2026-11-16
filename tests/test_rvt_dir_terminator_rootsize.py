@@ -15,7 +15,7 @@ def test_terminator_and_rootsize_flips_refused(tmp_path):
         try: sg.save(doc, bad, {'modified': ['stream:' + PN, 'el:7']}); return True
         except sg.SaveError: assert open(cur, 'rb').read() == before; return False
     assert run(good)
-    offs = [20, 21, 14 + 128, 15 + 128, 120, 122, 127]   # entry 0 terminator, entry 1 terminator, root size low/high bytes
+    offs = [20, 21, 14 + 128, 15 + 128, 122, 127]   # entry 0 terminator, entry 1 terminator, root size high bytes (beyond the root chain). Byte 120 low flip stays inside the chain capacity = dead mini bytes, a valid file accepted by design since 399
     acc = [i for i in offs if run(good[:base + i] + bytes([good[base + i] ^ 0x10]) + good[base + i + 1:])]
     assert not acc, acc
     free = [i for i, e in enumerate(cfb.CFB(good).entries) if e.type == 0]; assert free

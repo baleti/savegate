@@ -1083,6 +1083,8 @@ class RvtAdapter:
                     try: add.add(int(str(k).split(':')[-1]))
                     except ValueError: pass
                 gone = ih[0] - ih[1] - decl; extra = ih[1] - ih[0] - add; missing = add - ih[1]; dang = add & set(uh[1])
+                still = (decl & ih[1]) - set(uh[1])      # c4x-rvtgap 555: a declared deletion whose record still resolves in the output was ACCEPTED (no-op output + 'deleted' manifest)
+                if still: bad.append(('delete_not_applied', 'declared deleted but the element still resolves in the output: %s' % sorted(still)[:8]))
                 if gone or extra or missing or dang: bad.append(('id_set', 'ElemTable id set vs declaration: vanished %s, undeclared new %s, declared added but absent %s, added without record %s' % (sorted(gone)[:5], sorted(extra)[:5], sorted(missing)[:5], sorted(dang)[:5])))
             if new: bad.append(('unresolved_ids', 'ElemTable ids without a framed record in the output that were not declared deleted: %s' % sorted(new)[:8]))
         nd = sum(len(manifest.get(k, ())) for k in ('modified', 'added', 'deleted')); budget = 4 * max(1, nd)

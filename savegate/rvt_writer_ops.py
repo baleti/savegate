@@ -127,6 +127,21 @@ def _check_numbers(o):
 MODIFY_OPS = ('move_instance', 'move_element', 'rotate_instance', 'resize_wall', 'set_instance_type', 'move_textnote')
 
 
+def _check_order(ops):
+    """Pure op-order validation that needs no file (c4x-rvtgap 473: since the sniff and class lookups read the source first, a missing file masked these ValueErrors)."""
+    gone = set(); modified = set()
+    for o in ops:
+        if o['op'] in MODIFY_OPS:
+            if int(o['id']) in modified: raise ValueError('element %d is modified twice in one run (%s): edits of one element do not compose (the last one silently wins, item 395)' % (int(o['id']), o['op']))
+            modified.add(int(o['id']))
+        if o['op'] == 'delete':
+            if int(o['id']) in gone: raise ValueError('element %d is deleted twice in one run' % int(o['id']))
+            gone.add(int(o['id']))
+        elif o['op'] != 'delete_cascade':
+            for k in ('id', 'template'):
+                if k in o and int(o[k]) in gone: raise ValueError('op %s touches element %s deleted earlier in the same run' % (o['op'], o[k]))
+
+
 def _check_deleted_once(src_path, ops):
     """c7x-rvtread2 item 381: a second delete of the same id used to remove NEIGHBOURING records (delete+delete of TextNote 916133 lost 3 records: the TextNote, a Viewport and a FamilyInstance).
     An id may be deleted once per run and no later op may touch a deleted id."""
@@ -152,6 +167,7 @@ def _check_deleted_once(src_path, ops):
 
 def run(src_path, ops, dst_path, check_source=True, lab=False):
     _lab(); import rvtgen
+    _check_order(ops)
     for o in ops: _check_numbers(o)      # pure input validation first: no file needed (test_rvt_writer_c7x_finite_numbers expects ValueError, not FileNotFoundError)
     if not lab:      # c7x-rvtread2 561: the writer is fitted and oracle-tested for the writable years only; other years would produce unverified files (the save path refuses them, the raw API did not)
         from .adapters import RvtAdapter

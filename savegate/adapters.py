@@ -893,6 +893,10 @@ class RvtAdapter:
         ddecl = {int(str(k).split(':')[-1]) for k in manifest.get('deleted', ()) if str(k).startswith('el:')}
         if ddecl != dids: return [('writer_ops_mismatch', 'writer_ops delete ids %s differ from the declared deleted elements %s' % (sorted(dids), sorted(ddecl)))]
         adecl = {int(str(k).split(':')[-1]) for k in manifest.get('added', ()) if str(k).startswith('el:')}
+        # c4x-rvtgap 498: declaring a modification of an element no operation touches (the output was still byte-equal to the writer result, so harmless, but the declaration is false)
+        _touched = {int(o[k]) for o in ops for k in ('id', 'template') if o.get(k) is not None}
+        _mdecl = {int(str(k).split(':')[-1]) for k in manifest.get('modified', ()) if str(k).startswith('el:')}
+        if _mdecl - _touched - dids: return [('writer_ops_mismatch', 'declared modified elements %s are not targeted by any operation' % sorted(_mdecl - _touched - dids))]
         self._src_buf = bytes(src); bad = []
         if dids: bad += list(self._delete_reference_checks({'deleted': ['el:%d' % i for i in sorted(dids)]}))
         paths = []

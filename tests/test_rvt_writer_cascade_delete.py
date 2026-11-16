@@ -32,7 +32,14 @@ def test_cascade_delete_accepted_and_both_gone(tmp_path):
     ids = set(wledit.Editor(cur).m.ids); assert 870669 not in ids and 870670 not in ids
 
 
-def test_plain_delete_of_a_referenced_instance_is_refused(tmp_path):
+def test_plain_delete_of_a_referenced_instance_is_refused_by_the_writer(tmp_path):
     from savegate import rvt_writer_ops as WO
+    with pytest.raises(ValueError, match='dangling'): WO.run(SRC, [{'op': 'delete', 'id': 870670}], str(tmp_path / 'o.rvt'))      # c4x-rvtgap 502: writer-side guard
+
+
+def test_plain_delete_of_a_referenced_instance_is_refused(tmp_path, monkeypatch):
+    """the gate still refuses the dangling output when a producer bypasses the writer guard (guard switched off here)"""
+    from savegate import rvt_writer_ops as WO
+    monkeypatch.setattr(WO, '_plain_delete_guard', lambda *a, **k: None)
     ops = [{'op': 'delete', 'id': 870670}]; o = str(tmp_path / 'o.rvt'); WO.run(SRC, ops, o); nb = open(o, 'rb').read()
     ok, cur, before = _save(tmp_path, ops, [870670], nb); assert not ok and open(cur, 'rb').read() == before

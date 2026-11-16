@@ -260,11 +260,23 @@ def _dependents_guard(src_path, o):
     if found: raise ValueError('op %s: element %d has dependents the writer does not update (%s): dimensions, joins or hosted instances would go stale; refused (set allow_dependents=true to override for a Revit-VM test)' % (o['op'], tid, ', '.join('%s x%d' % kv for kv in sorted(found.items()))))
 
 
+def _plain_delete_guard(src_path, tid):
+    """c4x-rvtgap 502: a plain delete of an element that other elements reference would write a file with dangling references (the gate refuses such an output, 501, but the raw writer
+    did not). The plain delete is allowed only when cascade_plan says the element has no referrers at all; otherwise use delete_cascade (annotations) or refuse."""
+    try: plan = cascade_plan(src_path, tid)
+    except ValueError as e:
+        if 'is referenced by' in str(e): raise ValueError('op delete: %s; a plain delete would leave dangling references (use delete_cascade for annotations)' % e)
+        raise
+    if plan != [tid]: raise ValueError('op delete: element %d is referenced by %s; a plain delete would leave dangling references (use delete_cascade for annotations)' % (tid, [i for i in plan if i != tid]))
+
+
 def _apply_ops(g, src_path, ops, new_ids):
     for o in ops:
         _group_guard(src_path, o)
         if o['op'] in ('move_instance', 'move_element', 'rotate_instance', 'resize_wall'): _dependents_guard(src_path, o)
-        if o['op'] == 'delete': g.delete(int(o['id']))
+        if o['op'] == 'delete':
+            _plain_delete_guard(src_path, int(o['id']))
+            g.delete(int(o['id']))
         elif o['op'] == 'add_textnote':
             T = g.template(int(o['template'])); nid = g.nextid
             hdr, rec, item = make_textnote_rtf(g, T, nid, float(o['x']), float(o['y']), str(o['text']), float(o.get('z', 0.0)))

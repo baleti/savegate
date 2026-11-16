@@ -135,6 +135,7 @@ def verify_backup(p):
 
 def restore(path, which=None, allow_readonly=False):
     """restore backup number `which` (0 = newest) over `path`, atomically; the current file is backed up first.
+    0 = the version that was in place BEFORE the last save (and before the last restore), NOT the original; the pristine original is the OLDEST backup (highest number).
     Returns the backup path used."""
     from .atomic import is_readonly
     if not allow_readonly and os.path.exists(long_path(path)) and is_readonly(path): raise ReadOnlyTarget('%s is read-only: a restore replaces it like a save does; clear the flag or pass allow_readonly' % path)      # c4x-rvtgap

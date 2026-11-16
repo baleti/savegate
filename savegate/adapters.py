@@ -1055,6 +1055,7 @@ class RvtAdapter:
         bad += self._dangling_ref_checks(manifest)
         bad += self._adler_checks(manifest)
         bad += self._byte_window_checks(manifest)
+        bad += self._undeclared_partition_checks(manifest)
         self._tail_index_notes(manifest)
         # c4x-rvtgap 346 (NOTE only): a declared element edit without manifest['expect'] is checked per element, not per field (raw modify can overwrite neighbour fields)
         if any(str(k).startswith('el:') for k in list(manifest.get('modified', ())) + list(manifest.get('added', ()))) and not manifest.get('expect'):
@@ -1190,12 +1191,26 @@ class RvtAdapter:
             if p2: os.unlink(p2)
         return bad
 
+    def _undeclared_partition_checks(self, manifest):
+        """c4x-rvtgap item 457 SEV1: a valid declared edit plus ONE random bit flip in a different, undeclared partition was ACCEPTED (2 of 4 on the Electrical 2026 sample: the flips
+        landed in id tables / non-element data the element view does not decode, and the 1 KB span rule allows ~8 KB per element). Pure in-place edit of el: ids: every partition other
+        than the declared one must be member-for-member identical (inflated SHA-1) to the source."""
+        if manifest.get('added') or manifest.get('deleted'): return []
+        ids = [k for k in manifest.get('modified', ()) if str(k).startswith('el:')]
+        h = getattr(self, '_mem_hist', [])
+        if not ids or len(h) < 2 or not h[0] or not h[1]: return []
+        pn = getattr(self, '_bw_pn', None)
+        diff = sorted(n for n in set(h[0]) | set(h[1]) if h[0].get(n) != h[1].get(n))
+        if pn is not None: diff = [n for n in diff if n != pn]
+        elif len(diff) <= len(ids): return []
+        return [('undeclared_partition_changed', 'partition(s) %s differ from the source but hold no declared element (declared: %s)' % (', '.join(diff[:4]), ', '.join(map(str, ids[:4]))))] if diff else []
+
     def _byte_window_checks(self, manifest):
         """c5x-rvtgap SEV1: 1 of 40 random single-bit flips in the 22-byte record headers between element records (next to a valid declared edit) was ACCEPTED: the element view
         decodes fields only, the 1 KB block rule allows ~8 KB per element. Byte-exact rule: in the inflated partition of the declared element(s), the differing window
         (everything between the common prefix and the common suffix of source and output) must lie inside the declared elements' own records (field span plus 40 bytes of
         record header in front, 8 behind). Applies to pure in-place edits (no add/delete) of elements that live in one partition stream."""
-        self._bw_applied = False
+        self._bw_applied = False; self._bw_pn = None
         if manifest.get('added') or manifest.get('deleted'): return []
         ids = []
         for k in manifest.get('modified', ()):
@@ -1214,7 +1229,7 @@ class RvtAdapter:
             for e in ids:
                 t = ed.trace(e)
                 if pn not in (None, t[0]): return []                   # several partitions: other rules cover it
-                pn = t[0]; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3]); rs = t[1] if rs is None else min(rs, t[1]); W = ed.m.IDW; rq = t[4] if rq is None else max(rq, t[4]); rs_list.append(t[1]) if not t[2]['short'] else None
+                pn = t[0]; self._bw_pn = pn; l = min(x[2] for x in t[3]); u = max(x[3] for x in t[3]); rs = t[1] if rs is None else min(rs, t[1]); W = ed.m.IDW; rq = t[4] if rq is None else max(rq, t[4]); rs_list.append(t[1]) if not t[2]['short'] else None
                 lo = l if lo is None else min(lo, l); hi = u if hi is None else max(hi, u)
             def payload(buf):
                 st = rvtw.Stream(cfb.CFB(bytes(buf)).streams()[pn].data); pt = wlpart.Partition(st)

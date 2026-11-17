@@ -1274,7 +1274,7 @@ class RvtAdapter:
                         oil = _il(sed.trace(e)[2].get('fields') or {})
                         for k7, nv in _il(fl).items():
                             ov = oil.get(k7)
-                            if ov is not None and nv != ov and 0 <= ov <= 0xFFFF and nv >= 0x10000000: bad.append(('int_out_of_range', 'el:%d %s changed from %d to %d' % (e, k7, ov, nv)))
+                            if ov is not None and nv != ov and 0 <= ov <= 0xFFFF and nv >= 0x1000000: bad.append(('int_out_of_range', 'el:%d %s changed from %d to %d' % (e, k7, ov, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

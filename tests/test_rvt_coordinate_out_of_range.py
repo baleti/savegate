@@ -95,3 +95,16 @@ def test_geometry_untouched_also_with_derived_ok(tmp_path):
     doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
     with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:303689'], 'derived_ok': True})
     assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig
+
+
+def test_family_sketch_curve_info_change_refused(tmp_path):
+    """c4x-rvtgap 581: VarSketch.m_absorbedCurves[].m_GInfo.m_controlCommand = 0x7fffffff on the 2026 sample family was ACCEPTED; sketch curves count as geometry now."""
+    import wledit
+    FAM = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+    if not os.path.exists(FAM): pytest.skip('no sample family')
+    E = wledit.Editor(FAM); ent = [l for l in E.trace(613)[3] if l[1] == 'GInfo.m_controlCommand'][0]
+    E.modify(613, [(ent[2], 4, struct.pack('<I', 0x7fffffff))]); out = str(tmp_path / 'o.rfa'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rfa'; shutil.copy(FAM, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:613']})
+    assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig

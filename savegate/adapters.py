@@ -1104,8 +1104,37 @@ class RvtAdapter:
                 bad.append(('members_changed', '%s: %d members in the source, %s in the output' % (n, len(a), 'none (stream empty or unparsable)' if b is None else len(b)))); continue
             if len(a) != len(b): continue
             ch = [k for k in range(len(a)) if a[k] != b[k]]
-            if len(ch) > budget or (ch and ch[-1] - ch[0] + 1 > budget + 2): bad.append(('members_changed', '%s: %d members changed (%d..%d), declared %d' % (n, len(ch), ch[0], ch[-1], nd)))
+            if len(ch) > budget: bad.append(('members_changed', '%s: %d members changed (%d..%d), declared %d' % (n, len(ch), ch[0], ch[-1], nd)))
+            elif ch and ch[-1] - ch[0] + 1 > budget + 2:      # c4x-rvtgap 589: edits of several declared elements far apart (3 copies of a type name) are fine when EVERY changed member holds a declared record; scattered undeclared members stay refused
+                dm = self._declared_members(manifest).get(n)
+                if dm is None or any(k not in dm for k in ch): bad.append(('members_changed', '%s: %d members changed (%d..%d), declared %d' % (n, len(ch), ch[0], ch[-1], nd)))
         return bad
+
+    def _declared_members(self, manifest):
+        """{partition stream: set of gzip member indices that hold a declared (modified/added) element's record or its next record's link} from the OUTPUT; {} when it cannot be computed (then the strict span rule applies)."""
+        out = {}
+        try:
+            import bisect, tempfile, wledit
+            ids = set()
+            for kind in ('modified', 'added'):
+                for k in manifest.get(kind, ()):
+                    if str(k).startswith('el:'):
+                        try: ids.add(int(str(k)[3:]))
+                        except ValueError: pass
+            h = getattr(self, '_buf_hist', [])
+            if not ids or len(h) < 2: return {}
+            fd, pth = tempfile.mkstemp(suffix='.rvt', dir=__import__('savegate.sgtmp', fromlist=['x']).tmpdir()); os.write(fd, bytes(h[1])); os.close(fd)
+            try:
+                ed = wledit.Editor(pth)
+                for e in ids:
+                    pn, i, r, log, q = ed.trace(e); offs = [int(x) for x in ed.m.parts[pn]['offs']]
+                    a = bisect.bisect_right(offs, i) - 1; z = bisect.bisect_right(offs, q + 3) - 1
+                    out.setdefault(pn, set()).update(range(a, z + 1))
+            finally:
+                try: os.unlink(pth)
+                except OSError: pass
+        except Exception: return {}
+        return out
 
     def expand(self, manifest):
         mod = set(manifest.get('modified', ()))

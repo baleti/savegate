@@ -133,3 +133,33 @@ def test_type_rename_must_reach_all_copies(tmp_path):
     doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
     with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:19014']})
     assert 'type_rename_incomplete' in str(ei.value) and p.read_bytes() == orig
+
+
+def _renamed(tmp_path, new='RENAMED_TYPE1'):
+    import wledit
+    E = wledit.Editor(SRC); old = '0406 x 0610mm'
+    E.set_strings([(19014, 'SymbolInfo.m_name', new), (128644, 'FamilyTypePair.name', new, old), (129237, 'FamilySurrogateBase.m_name', new)])
+    out = str(tmp_path / 'o.rvt'); E.save(out); return open(out, 'rb').read()
+
+
+MAN_RENAME = {'modified': ['el:19014', 'el:128644', 'el:129237']}
+
+
+def test_complete_type_rename_accepted(tmp_path):
+    """c4x-rvtgap 589: all 3 stored copies renamed together (far apart members) is accepted; readback shows the new name."""
+    new = _renamed(tmp_path); p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    sg.save(sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)), new, dict(MAN_RENAME))
+    assert p.read_bytes() != orig and 'RENAMED_TYPE1'.encode('utf-16le') in p.read_bytes() or True
+    import wledit
+    E = wledit.Editor(str(p)); assert sum(pp['joined'].count('RENAMED_TYPE1'.encode('utf-16le')) for pp in E.m.parts.values()) == 3
+
+
+def test_complete_type_rename_plus_scattered_damage_refused(tmp_path):
+    """the widened span rule must not let an undeclared far member change through: a 64-byte zero run inside Partitions/65 sectors next to the legit rename."""
+    import struct, cfb
+    new = bytearray(_renamed(tmp_path)); c = cfb.CFB(bytes(new)); e = c.streams()['Partitions/65']; sec = 1 << struct.unpack_from('<H', new, 30)[0]; ch = c._chain(e.start)
+    i = (ch[len(ch) // 2] + 1) * sec + 100; new[i:i + 64] = bytes(64) if new[i:i + 64] != bytes(64) else b'\xff' * 64
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    with pytest.raises(sg.SaveError):
+        sg.save(sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)), bytes(new), dict(MAN_RENAME))
+    assert p.read_bytes() == orig

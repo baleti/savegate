@@ -1197,9 +1197,21 @@ class RvtAdapter:
                             if nv is None or ov is None or int(nv) == int(ov): continue
                             if int(nv) == 0: bad.append(('reference_zeroed', 'el:%d %s was set to 0' % (e, k)))
                             elif int(nv) == 0xFFFFFFFFFFFFFFFF and int(ov) < (1 << 62): bad.append(('reference_dropped', 'el:%d %s lost its reference to el:%d' % (e, k, int(ov))))
-                    for k in ('m_orig', 'm_instOrigin'):      # c4x-rvtgap 570: 1e30 is a real Revit sentinel elsewhere (bounding boxes, outlines) but a placement point 1e6 ft out is never an edit (writer cap 1e5 ft); only if changed vs the source
-                        nv = fl.get(k); ov = (sed.trace(e)[2].get('fields') or {}).get(k) if sed is not None else None
-                        if isinstance(nv, (list, tuple)) and nv != ov and any(isinstance(c, float) and abs(c) > 1e6 for c in nv): bad.append(('coordinate_out_of_range', 'el:%d %s holds a coordinate beyond 1e6 ft: %r' % (e, k, nv)))
+                    def _pos(v, pth='', out=None, d=0):      # c4x-rvtgap 570/571: placement / curve-location leaves by key name, path -> value
+                        out = {} if out is None else out
+                        if d > 12: return out
+                        if isinstance(v, dict):
+                            for k2, x in v.items():
+                                if k2 in ('m_orig', 'm_instOrigin', 'm_origin', 'm_endParams', 'm_locLineOffset'): out[pth + '/' + k2] = x
+                                _pos(x, pth + '/' + k2, out, d + 1)
+                        elif isinstance(v, (list, tuple)):
+                            for n2, x in enumerate(v[:200]):
+                                if isinstance(x, (dict, list, tuple)): _pos(x, pth + '[%d]' % n2, out, d + 1)
+                        return out
+                    npos = _pos(fl); opos = _pos(sed.trace(e)[2].get('fields') or {}) if sed is not None else {}
+                    for k2, nv in npos.items():      # 1e30 is a real Revit sentinel elsewhere (bounding boxes, outlines) but a placement point or wall location 1e6 ft out is never an edit (writer cap 1e5 ft); only if changed vs the source
+                        cs = nv if isinstance(nv, (list, tuple)) else [nv]
+                        if nv != opos.get(k2) and any(isinstance(c, float) and abs(c) > 1e6 for c in cs): bad.append(('coordinate_out_of_range', 'el:%d %s holds a coordinate beyond 1e6 ft: %r' % (e, k2, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

@@ -20,3 +20,16 @@ def test_origin_bound(tmp_path, val, ok):
     else:
         with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:303726']})
         assert 'coordinate_out_of_range' in str(ei.value) and p.read_bytes() == orig
+
+
+@pytest.mark.parametrize('eid,fld,val,ok', [(303695, 'FamilyInstance.m_instOrigin', 1e30, False), (303689, 'GLine.m_origin', 1e30, False), (303689, 'GCurve.m_endParams', 1e30, False), (303689, 'VWall.m_locLineOffset', 1e30, False), (303689, 'GLine.m_origin', 12.5, True)])
+def test_instance_and_wall_location_bound(tmp_path, eid, fld, val, ok):
+    import wledit
+    E = wledit.Editor(SRC); o = [l[2] for l in E.trace(eid)[3] if l[1] == fld][0]
+    E.modify(eid, [(o, 8, struct.pack('<d', val))]); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)); man = {'modified': ['el:%d' % eid]}
+    if ok: sg.save(doc, new, man); assert p.read_bytes() != orig
+    else:
+        with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
+        assert 'coordinate_out_of_range' in str(ei.value) and p.read_bytes() == orig

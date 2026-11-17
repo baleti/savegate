@@ -1257,10 +1257,10 @@ class RvtAdapter:
                     oenum = _enum(sed.trace(e)[2].get('fields') or {}) if sed is not None else {}
                     for k5, nv in _enum(fl).items():
                         if nv > 255 and oenum.get(k5) != nv: bad.append(('enum_out_of_range', 'el:%d %s = %d (an enum field: observed values are 0..5)' % (e, k5, nv)))
-                    if sed is not None and not manifest.get('writer_ops') and not manifest.get('derived_ok'):      # c4x-rvtgap 579: geometry caches of a declared element are not judged field by field (47 of 82 sampled u32 writes accepted); an edit that declares no move/derived change must leave them untouched
+                    if sed is not None and not manifest.get('writer_ops'):      # c4x-rvtgap 579/580 (a writer move_element of a wall and move_instance change 0 of 850 / 1 geometry-cache leaves, so derived_ok edits need no geometry change either): geometry caches of a declared element are not judged field by field (47 of 82 sampled u32 writes accepted); an edit that declares no move/derived change must leave them untouched
                         sfl = sed.trace(e)[2].get('fields') or {}
                         gch = [k6 for k6 in ('m_geomSteps', 'm_pGeomTable', 'm_oGeomToElemMap') if repr(fl.get(k6)) != repr(sfl.get(k6))]
-                        if gch: bad.append(('geometry_changed', 'el:%d: %s changed although the edit declares neither writer_ops nor derived_ok' % (e, ', '.join(gch))))
+                        if gch: bad.append(('geometry_changed', 'el:%d: %s changed although the edit declares no writer_ops' % (e, ', '.join(gch))))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

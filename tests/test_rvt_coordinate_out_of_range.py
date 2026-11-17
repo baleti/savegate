@@ -85,3 +85,13 @@ def test_geometry_untouched_without_derived_ok(tmp_path, eid, fld, nth, derived,
     else:
         with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
         assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig
+
+
+def test_geometry_untouched_also_with_derived_ok(tmp_path):
+    import wledit
+    E = wledit.Editor(SRC); ent = [l for l in E.trace(303689)[3] if l[1] == 'GeomTabEntry.m_geomGeneratorId'][0]
+    E.modify(303689, [(ent[2], 4, struct.pack('<I', 0x7fffffff))]); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:303689'], 'derived_ok': True})
+    assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig

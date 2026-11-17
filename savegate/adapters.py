@@ -1212,6 +1212,21 @@ class RvtAdapter:
                     for k2, nv in npos.items():      # 1e30 is a real Revit sentinel elsewhere (bounding boxes, outlines) but a placement point or wall location 1e6 ft out is never an edit (writer cap 1e5 ft); only if changed vs the source
                         cs = nv if isinstance(nv, (list, tuple)) else [nv]
                         if nv != opos.get(k2) and any(isinstance(c, float) and abs(c) > 1e6 for c in cs): bad.append(('coordinate_out_of_range', 'el:%d %s holds a coordinate beyond 1e6 ft: %r' % (e, k2, nv)))
+                    if sed is not None:      # c4x-rvtgap 572: ANY double leaf of an existing declared element that goes from a sane value (<= 1e6) to an absurd one (> 1e6); sentinels already in the source (1e30 outlines) and added elements (cloned sentinels) are not touched
+                        def _fl(v, pth='', out=None, d=0):
+                            out = {} if out is None else out
+                            if d > 14 or len(out) > 20000: return out
+                            if isinstance(v, float): out[pth] = v
+                            elif isinstance(v, dict):
+                                for k3, x in v.items(): _fl(x, pth + '/' + str(k3), out, d + 1)
+                            elif isinstance(v, (list, tuple)):
+                                for n3, x in enumerate(v[:2000]): _fl(x, pth + '[%d]' % n3, out, d + 1)
+                            return out
+                        osf = (sed.trace(e)[2].get('fields') or {}); of_ = _fl(osf)
+                        if of_:
+                            for k3, nv in _fl(fl).items():
+                                ov = of_.get(k3)
+                                if ov is not None and nv != ov and abs(nv) > 1e6 >= abs(ov) and math.isfinite(nv): bad.append(('value_out_of_range', 'el:%d %s changed from %r to %r' % (e, k3, ov, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

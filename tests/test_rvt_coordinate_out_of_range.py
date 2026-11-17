@@ -33,3 +33,16 @@ def test_instance_and_wall_location_bound(tmp_path, eid, fld, val, ok):
     else:
         with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
         assert 'coordinate_out_of_range' in str(ei.value) and p.read_bytes() == orig
+
+
+@pytest.mark.parametrize('val,ok', [(1.5, True), (1e30, False), (-1e12, False)])
+def test_any_double_sane_to_absurd_refused(tmp_path, val, ok):
+    import wledit
+    E = wledit.Editor(SRC); o = [l[2] for l in E.trace(355)[3] if l[1] == 'Level.m_roomComputationElevationOffset'][0]
+    E.modify(355, [(o, 8, struct.pack('<d', val))]); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)); man = {'modified': ['el:355'], 'derived_ok': True}
+    if ok: sg.save(doc, new, man); assert p.read_bytes() != orig
+    else:
+        with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
+        assert 'value_out_of_range' in str(ei.value) and p.read_bytes() == orig

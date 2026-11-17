@@ -1244,6 +1244,19 @@ class RvtAdapter:
                             except Exception: orich = {}
                         for k4, (nl, tl) in nrich.items():
                             if nl != tl and (k4 not in orich or orich[k4][0] == orich[k4][1]): bad.append(('rich_text_length', 'el:%d %s: m_nLengthInRichEditCtrl %d but the text has %d characters' % (e, k4, nl, tl)))
+                    def _enum(v, pth='', out=None, d=0):      # c4x-rvtgap 575: small enums: observed values on 25 corpus files are 0..5, 0x7fffffff was ACCEPTED in each
+                        out = {} if out is None else out
+                        if d > 12: return out
+                        if isinstance(v, dict):
+                            for k5, x in v.items():
+                                if k5 in ('m_leaderLeftAttachment', 'm_leaderRightAttachment', 'm_paragraphNumberingStyle', 'm_background') and isinstance(x, int): out[pth + '/' + k5] = x
+                                _enum(x, pth + '/' + str(k5), out, d + 1)
+                        elif isinstance(v, (list, tuple)):
+                            for n5, x in enumerate(v[:500]): _enum(x, pth + '[%d]' % n5, out, d + 1)
+                        return out
+                    oenum = _enum(sed.trace(e)[2].get('fields') or {}) if sed is not None else {}
+                    for k5, nv in _enum(fl).items():
+                        if nv > 255 and oenum.get(k5) != nv: bad.append(('enum_out_of_range', 'el:%d %s = %d (an enum field: observed values are 0..5)' % (e, k5, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

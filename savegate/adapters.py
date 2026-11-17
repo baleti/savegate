@@ -1227,6 +1227,23 @@ class RvtAdapter:
                             for k3, nv in _fl(fl).items():
                                 ov = of_.get(k3)
                                 if ov is not None and nv != ov and abs(nv) > 1e6 >= abs(ov) and math.isfinite(nv): bad.append(('value_out_of_range', 'el:%d %s changed from %r to %r' % (e, k3, ov, nv)))
+                    def _rich(v, pth='', out=None, d=0):      # c4x-rvtgap 573: rich-text fragments: m_nLengthInRichEditCtrl must equal the text length (UTF-16 units); 0x7fffffff there was ACCEPTED
+                        out = {} if out is None else out
+                        if d > 12: return out
+                        if isinstance(v, dict):
+                            if isinstance(v.get('m_text'), str) and isinstance(v.get('m_nLengthInRichEditCtrl'), int): out[pth] = (v['m_nLengthInRichEditCtrl'], len(v['m_text'].encode('utf-16le', 'surrogatepass')) // 2)
+                            for k4, x in v.items(): _rich(x, pth + '/' + str(k4), out, d + 1)
+                        elif isinstance(v, (list, tuple)):
+                            for n4, x in enumerate(v[:500]): _rich(x, pth + '[%d]' % n4, out, d + 1)
+                        return out
+                    nrich = _rich(fl)
+                    if nrich:
+                        orich = {}
+                        if sed is not None:
+                            try: orich = _rich(sed.trace(e)[2].get('fields') or {})
+                            except Exception: orich = {}
+                        for k4, (nl, tl) in nrich.items():
+                            if nl != tl and (k4 not in orich or orich[k4][0] == orich[k4][1]): bad.append(('rich_text_length', 'el:%d %s: m_nLengthInRichEditCtrl %d but the text has %d characters' % (e, k4, nl, tl)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

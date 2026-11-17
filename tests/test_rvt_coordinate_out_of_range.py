@@ -46,3 +46,16 @@ def test_any_double_sane_to_absurd_refused(tmp_path, val, ok):
     else:
         with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
         assert 'value_out_of_range' in str(ei.value) and p.read_bytes() == orig
+
+
+@pytest.mark.parametrize('v,ok', [(0x7fffffff, False), (19, False), (17, False)])
+def test_rich_text_length_matches_text(tmp_path, v, ok):
+    import wledit
+    E = wledit.Editor(SRC); o = [l[2] for l in E.trace(303726)[3] if l[1] == 'RichTextFragment.m_nLengthInRichEditCtrl'][0]
+    E.modify(303726, [(o, 4, struct.pack('<I', v))]); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)); man = {'modified': ['el:303726']}
+    if ok: sg.save(doc, new, man)
+    else:
+        with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
+        assert 'rich_text_length' in str(ei.value) and p.read_bytes() == orig

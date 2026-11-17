@@ -1261,6 +1261,20 @@ class RvtAdapter:
                         sfl = sed.trace(e)[2].get('fields') or {}
                         gch = [k6 for k6 in ('m_geomSteps', 'm_pGeomTable', 'm_oGeomToElemMap', 'm_absorbedCurves') if repr(fl.get(k6)) != repr(sfl.get(k6))]
                         if gch: bad.append(('geometry_changed', 'el:%d: %s changed although the edit declares no writer_ops' % (e, ', '.join(gch))))
+                    if sed is not None:      # c4x-rvtgap 582: any integer leaf of an existing declared element that jumps from a small value (<= 0xFFFF) to >= 0x10000000 (enums, masks, indices, handles went 0/1/2 -> 0x7fffffff unchecked, 28 of 90 sampled family writes)
+                        def _il(v, pth='', out=None, d=0):
+                            out = {} if out is None else out
+                            if d > 14 or len(out) > 40000: return out
+                            if isinstance(v, int) and not isinstance(v, bool): out[pth] = v
+                            elif isinstance(v, dict):
+                                for k7, x in v.items(): _il(x, pth + '/' + str(k7), out, d + 1)
+                            elif isinstance(v, (list, tuple)):
+                                for n7, x in enumerate(v[:2000]): _il(x, pth + '[%d]' % n7, out, d + 1)
+                            return out
+                        oil = _il(sed.trace(e)[2].get('fields') or {})
+                        for k7, nv in _il(fl).items():
+                            ov = oil.get(k7)
+                            if ov is not None and nv != ov and 0 <= ov <= 0xFFFF and nv >= 0x10000000: bad.append(('int_out_of_range', 'el:%d %s changed from %d to %d' % (e, k7, ov, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

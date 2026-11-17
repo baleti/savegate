@@ -108,3 +108,18 @@ def test_family_sketch_curve_info_change_refused(tmp_path):
     doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
     with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:613']})
     assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig
+
+
+@pytest.mark.parametrize('eid,fld', [(80, 'ControlledDocAccess.m_pDoc'), (80, 'Element.m_docAccess')])
+def test_small_int_to_huge_refused_in_family(tmp_path, eid, fld):
+    """c4x-rvtgap 582: enums/masks/handles/indices jumping from a small value to 0x7fffffff were accepted (28 of 90 sampled family writes)."""
+    import wledit, glob
+    FAM = os.path.expanduser('~/rvt-research/samples-rfa/racbasicsamplefamily-2026.rfa')
+    if not os.path.exists(FAM): pytest.skip('no sample family')
+    E = wledit.Editor(FAM); ents = [l for l in E.trace(eid)[3] if l[1] == fld]
+    if not ents: pytest.skip('field not in record')
+    E.modify(eid, [(ents[0][2], 4, struct.pack('<I', 0x7fffffff))]); out = str(tmp_path / 'o.rfa'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rfa'; shutil.copy(FAM, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:%d' % eid]})
+    assert 'int_out_of_range' in str(ei.value) and p.read_bytes() == orig

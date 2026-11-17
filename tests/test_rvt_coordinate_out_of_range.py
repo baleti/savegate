@@ -72,3 +72,16 @@ def test_enum_fields_bounded(tmp_path, fld, v, ok):
     else:
         with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
         assert 'enum_out_of_range' in str(ei.value) and p.read_bytes() == orig
+
+
+@pytest.mark.parametrize('eid,fld,nth,derived,ok', [(303689, 'GeomTabEntry.m_geomGeneratorId', 0, False, False), (303689, 'EdgeHistEntry.m_id', 0, False, False), (303689, 'GeomStep.m_pElem', 0, False, False), (303689, 'VWall.m_locLineOffset', 0, False, True)])
+def test_geometry_untouched_without_derived_ok(tmp_path, eid, fld, nth, derived, ok):
+    import wledit
+    E = wledit.Editor(SRC); ent = [l for l in E.trace(eid)[3] if l[1] == fld][nth]
+    E.modify(eid, [(ent[2], ent[3] - ent[2], struct.pack('<I', 0x7fffffff) if ent[3] - ent[2] == 4 else struct.pack('<d', 0.5))]); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False)); man = {'modified': ['el:%d' % eid]}
+    if ok: sg.save(doc, new, man); assert p.read_bytes() != orig
+    else:
+        with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, man)
+        assert 'geometry_changed' in str(ei.value) and p.read_bytes() == orig

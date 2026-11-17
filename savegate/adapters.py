@@ -1197,6 +1197,9 @@ class RvtAdapter:
                             if nv is None or ov is None or int(nv) == int(ov): continue
                             if int(nv) == 0: bad.append(('reference_zeroed', 'el:%d %s was set to 0' % (e, k)))
                             elif int(nv) == 0xFFFFFFFFFFFFFFFF and int(ov) < (1 << 62): bad.append(('reference_dropped', 'el:%d %s lost its reference to el:%d' % (e, k, int(ov))))
+                    for k in ('m_orig', 'm_instOrigin'):      # c4x-rvtgap 570: 1e30 is a real Revit sentinel elsewhere (bounding boxes, outlines) but a placement point 1e6 ft out is never an edit (writer cap 1e5 ft); only if changed vs the source
+                        nv = fl.get(k); ov = (sed.trace(e)[2].get('fields') or {}).get(k) if sed is not None else None
+                        if isinstance(nv, (list, tuple)) and nv != ov and any(isinstance(c, float) and abs(c) > 1e6 for c in nv): bad.append(('coordinate_out_of_range', 'el:%d %s holds a coordinate beyond 1e6 ft: %r' % (e, k, nv)))
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass

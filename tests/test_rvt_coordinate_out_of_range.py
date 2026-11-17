@@ -123,3 +123,13 @@ def test_small_int_to_huge_refused_in_family(tmp_path, eid, fld):
     doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
     with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:%d' % eid]})
     assert 'int_out_of_range' in str(ei.value) and p.read_bytes() == orig
+
+
+def test_type_rename_must_reach_all_copies(tmp_path):
+    """c4x-rvtgap 588: renaming a FamilySymbol through SymbolInfo.m_name only (the Family type list and the surrogate keep the old name) was ACCEPTED."""
+    import wledit
+    E = wledit.Editor(SRC); E.set_string(19014, 'SymbolInfo.m_name', 'RENAMED_TYPE'); out = str(tmp_path / 'o.rvt'); E.save(out); new = open(out, 'rb').read()
+    p = tmp_path / 'a.rvt'; shutil.copy(SRC, p); orig = p.read_bytes()
+    doc = sg.open_doc(str(p), None, sg.Config(allow_overwrite=True, require_gate=False))
+    with pytest.raises(sg.SaveError) as ei: sg.save(doc, new, {'modified': ['el:19014']})
+    assert 'type_rename_incomplete' in str(ei.value) and p.read_bytes() == orig

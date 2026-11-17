@@ -1275,6 +1275,13 @@ class RvtAdapter:
                         for k7, nv in _il(fl).items():
                             ov = oil.get(k7)
                             if ov is not None and nv != ov and 0 <= ov <= 0xFFFF and nv >= 0x1000000: bad.append(('int_out_of_range', 'el:%d %s changed from %d to %d' % (e, k7, ov, nv)))
+                    try:      # c4x-rvtgap 588: a type (FamilySymbol) rename must reach every stored copy of the name (Family.m_pFamilyTypes pair, FamSymSurrogate.m_name): renaming only SymbolInfo.m_name left 2 stale copies and was ACCEPTED
+                        if sed is not None:
+                            nn = ((fl.get('m_symbolInfo') or {}).get('obj') or {}).get('m_name'); on = ((sfl_ := (sed.trace(e)[2].get('fields') or {}).get('m_symbolInfo') or {}).get('obj') or {}).get('m_name') if isinstance(fl.get('m_symbolInfo'), dict) else None
+                            if isinstance(nn, str) and isinstance(on, str) and nn != on and on:
+                                ob = on.encode('utf-16le'); cs = sum(pp['joined'].count(ob) for pp in sed.m.parts.values()); co = sum(pp['joined'].count(ob) for pp in ed.m.parts.values())
+                                if cs > 1 and co >= cs - 1: bad.append(('type_rename_incomplete', 'el:%d renamed %r -> %r but %d other stored copies of the old name remain (Family type list / surrogate not updated)' % (e, on, nn, co)))
+                    except Exception: pass
                     if fl.get('m_moribund') == 1 and not (sed is not None and (sed.trace(e)[2].get('fields') or {}).get('m_moribund') == 1):
                         bad.append(('moribund_set', 'el:%d is marked moribund (deleted) by the edit' % e))
                 except Exception: pass
